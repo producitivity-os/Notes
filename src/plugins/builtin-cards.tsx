@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, NotebookTabs, UserRound } from "lucide-react";
+import { BookOpen, NotebookTabs, UserRound } from "@productivity-os/shared-ui/components/sf-symbols";
 import { z } from "zod";
 import {
   IllustrationCard,

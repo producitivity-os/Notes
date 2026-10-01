@@ -4,11 +4,11 @@
   --workspace-accent: #3b82f6;
   --canvas-tool-menu-icon: #7c3aed;
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-    ui-sans-serif, system-ui, sans-serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", ui-sans-serif,
+    system-ui, sans-serif;
   font-size: 14px;
-  color: #202326;
-  background: #202020;
+  color: var(--foreground);
+  background: var(--background);
   font-synthesis: none;
 }
 * {
@@ -36,19 +36,16 @@ svg {
 }
 
 .notes-home-shell {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  flex-direction: column;
   overflow: hidden;
   background: #202020;
 }
-.notes-home-viewport {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
+.application-sidebar-loading,
+.application-sidebar-empty {
+  display: block;
+  padding: 7px 9px;
+  color: #77777d;
+  font-size: 9px;
+  line-height: 1.4;
 }
 .notes-library-page {
   width: min(940px, 100%);
@@ -113,35 +110,58 @@ svg {
   font-size: 10px;
 }
 
-.notes-settings-panel {
+.notes-preferences-window {
   display: grid;
-  gap: 18px;
-  border: 1px solid var(--border);
+  height: 100%;
+  align-content: start;
+  gap: 22px;
+  padding: 54px 34px 30px;
+  background: var(--background);
+  color: var(--foreground);
+}
+.notes-preferences-window header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.notes-preferences-window header > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
   border-radius: 12px;
-  background: var(--card);
-  color: var(--card-foreground);
-  padding: 18px;
+  background: color-mix(in srgb, #3b82f6 18%, transparent);
+  color: #60a5fa;
 }
-.notes-settings-panel > span {
+.notes-preferences-window header svg {
+  width: 22px;
+  height: 22px;
+}
+.notes-preferences-window h1,
+.notes-preferences-window p {
+  margin: 0;
+}
+.notes-preferences-window h1 {
+  font-size: 17px;
+}
+.notes-preferences-window p {
+  margin-top: 3px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.notes-preferences-window section {
   display: grid;
-  gap: 4px;
-}
-.notes-settings-panel strong {
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
   font-size: 12px;
 }
-.notes-settings-panel small,
-.notes-settings-panel p {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 10px;
-}
-.notes-theme-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.notes-theme-options button {
-  min-width: 88px;
+.notes-preferences-window section > div {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
 }
 
 .detail-shell {
@@ -149,6 +169,17 @@ svg {
   width: 100%;
   height: 100%;
   background: #f4f6f8;
+}
+.detail-workspace {
+  width: 100%;
+  height: 100%;
+}
+.detail-card-editor-shield {
+  position: absolute;
+  z-index: 1400;
+  inset: 0;
+  background: rgb(244 246 248 / 0.62);
+  backdrop-filter: saturate(0.72) brightness(0.94);
 }
 .detail-canvas-surface {
   width: 100%;
@@ -325,11 +356,7 @@ svg {
 .preset-grid button[aria-pressed="true"],
 .segmented-row button[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--workspace-accent) 72%, var(--border));
-  background: color-mix(
-    in srgb,
-    var(--workspace-accent) 18%,
-    var(--background)
-  );
+  background: color-mix(in srgb, var(--workspace-accent) 18%, var(--background));
   color: color-mix(in srgb, var(--workspace-accent) 74%, var(--foreground));
 }
 .preset-grid i {
@@ -554,10 +581,209 @@ svg {
 }
 .blank-card-editor-dialog {
   width: min(960px, calc(100vw - 40px));
+  height: min(860px, calc(100vh - 40px));
   max-width: none;
-  height: min(720px, calc(100vh - 40px));
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: min(860px, calc(100vh - 40px));
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  padding: 0;
+  border-radius: 20px;
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.21 0 0);
+  --popover: oklch(0.985 0 0);
+  --popover-foreground: oklch(0.21 0 0);
+  --muted: oklch(0.95 0 0);
+  --muted-foreground: oklch(0.48 0 0);
+  --accent: oklch(0.93 0 0);
+  --accent-foreground: oklch(0.21 0 0);
+  --border: oklch(0.88 0 0);
+  --input: oklch(0.88 0 0);
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+}
+body:has(.tiered-card-editor-dialog) [data-slot="dialog-overlay"] {
+  background: transparent;
+  backdrop-filter: none;
+}
+.tiered-card-save-error {
+  position: absolute;
+  z-index: 22;
+  right: 18px;
+  bottom: 18px;
+  max-width: min(360px, calc(100% - 36px));
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 45%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--popover) 86%, transparent);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(12px);
+  color: var(--destructive);
+  font-size: 12px;
+}
+html:has(.tiered-card-editor-window),
+body:has(.tiered-card-editor-window),
+body:has(.tiered-card-editor-window) #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.tiered-card-editor-window {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.card-editor-window-message {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  background: #f4f6f8;
+  color: #202124;
+  text-align: center;
+}
+.card-editor-window-message h1,
+.card-editor-window-message p {
+  margin: 0;
+}
+.tiered-card-editor-scroll {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  scroll-snap-type: y proximity;
+  background: #f4f6f8;
+}
+.card-tier-section {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  overflow: hidden;
+  padding: 0;
+  scroll-snap-align: start;
+  background: #f4f6f8;
+}
+.card-tier-section[data-tier-index="0"] {
+  height: calc(100% - 44px);
+}
+.card-tier-section[data-tier-index]:not([data-tier-index="0"]):not(
+    [data-tier-index="1"]
+  ) {
+  border-top: 2px solid var(--border);
+}
+.card-tier-appendage {
+  position: relative;
+  z-index: 22;
+  display: flex;
+  width: 100%;
+  height: 44px;
+  flex: 0 0 44px;
+  justify-content: center;
+  border-top: 2px solid var(--border);
+  background: #f4f6f8;
+}
+.card-tier-header {
+  position: absolute;
+  z-index: 12;
+  top: 16px;
+  right: 16px;
+  left: 16px;
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  pointer-events: none;
+}
+.card-tier-header > strong,
+.card-tier-header > input,
+.card-tier-actions {
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--popover) 86%, transparent);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+.card-tier-header > strong,
+.card-tier-header > input {
+  padding: 7px 10px;
+  border-radius: 9px;
+}
+.card-tier-header input {
+  width: min(260px, 60%);
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  outline: none;
+}
+.card-tier-header input:focus {
+  border-bottom-color: var(--ring);
+}
+.card-tier-actions {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+}
+.card-tier-actions svg {
+  width: 15px;
+  height: 15px;
+}
+.card-tier-native-note {
+  position: absolute;
+  z-index: 11;
+  top: 62px;
+  left: 16px;
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--popover) 86%, transparent);
+  backdrop-filter: blur(12px);
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.card-tier-section .blank-card-editor-canvas {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+}
+.add-card-tier {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  background: color-mix(in srgb, var(--popover) 88%, transparent);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(12px);
+}
+.notebook-cover-dialog {
+  width: min(420px, calc(100vw - 32px));
+}
+.notebook-cover-dialog .book-cover-input {
+  width: 100%;
+}
+.card-tier-preview-regenerator {
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  z-index: -1;
+  pointer-events: none;
 }
 .blank-card-editor-canvas {
   position: relative;
@@ -569,7 +795,7 @@ svg {
   background: #f4f6f8;
 }
 .blank-card-editor-canvas .canvas-floating-toolbar {
-  top: 12px;
+  top: 64px;
 }
 .target-dialog {
   width: min(410px, calc(100vw - 32px));
@@ -621,7 +847,7 @@ svg {
 .detail-loading-overlay {
   position: absolute;
   z-index: 1200;
-  inset: 0;
+  inset: 32px 0 0;
   background: rgb(32 32 32 / 0.82);
   backdrop-filter: blur(8px);
   transition: opacity 180ms ease;
@@ -752,6 +978,29 @@ svg {
 }
 .light .notes-home-shell {
   background: #f5f5f4;
+}
+.light .notes-market-grid article {
+  border-color: #d9d9d6;
+  background: #ffffff;
+}
+.light .notes-market-grid h2,
+.light .notes-library-placeholder strong {
+  color: #29292d;
+}
+.light .notes-market-grid p {
+  color: #68686e;
+}
+.light .notes-market-grid small,
+.light .notes-library-placeholder {
+  color: #77777d;
+}
+.light .notes-plugin-icon {
+  background: color-mix(in srgb, #3b82f6 12%, white);
+  color: #2868c7;
+}
+.light .notes-library-placeholder {
+  border-color: rgba(24, 24, 27, 0.14);
+  background: #fafaf9;
 }
 
 @media (max-width: 640px) {

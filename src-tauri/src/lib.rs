@@ -1,18 +1,22 @@
 use app_core::{
     AppActivity, AppActivityTarget, CanvasDocument, CanvasDocumentSummary, CanvasType,
     MediaDataInput, MediaEntry, MediaImportResult, MediaListQuery, MediaPage, PersonRecord,
-    PluginInstallation, SaveCanvasInput, SavePersonInput, ServiceSettings, WorkflowDocumentKind,
+    PluginInstallation, SaveCanvasInput, SaveCardTierPreviewInput, SavePersonInput,
+    ServiceSettings, WorkflowDocumentKind,
 };
 use data_client::DataClient;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     io::{Read, Seek, SeekFrom},
     path::{Component, Path, PathBuf},
     sync::Mutex,
 };
+mod preferences;
+
 use tauri::{
     http::{header, Method, Request as HttpRequest, Response as HttpResponse, StatusCode},
-    menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
+    menu::{IconMenuItemBuilder, MenuBuilder, MenuItemBuilder, NativeIcon, SubmenuBuilder},
     AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
@@ -24,6 +28,7 @@ struct AppState {
     configured_settings: Option<ServiceSettings>,
     config_error: Option<String>,
     initial_navigation: Mutex<Option<InitialNavigation>>,
+    card_editor_sessions: Mutex<HashMap<String, CardEditorSession>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -31,6 +36,69 @@ struct AppState {
 struct InitialNavigation {
     notebook_id: String,
     object_id: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CardEditorSession {
+    session_id: String,
+    notebook_id: String,
+    notebook_title: String,
+    card_id: String,
+    tiers: serde_json::Value,
+    #[serde(skip_serializing)]
+    parent_label: String,
+    #[serde(skip_serializing)]
+    editor_label: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CardEditorLifecycle {
+    session_id: String,
+    notebook_id: String,
+    open: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenCardEditorInput {
+    notebook_id: String,
+    notebook_title: String,
+    card_id: String,
+    tiers: serde_json::Value,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CardEditorSaveRequest {
+    session_id: String,
+    request_id: String,
+    card_id: String,
+    tiers: serde_json::Value,
+    previews: serde_json::Value,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CardEditorSaveResult {
+    session_id: String,
+    request_id: String,
+    succeeded: bool,
+    error: Option<String>,
+}
+
+#[tauri::command]
+fn get_notes_preferences() -> preferences::NotesPreferences {
+    preferences::get()
+}
+
+#[tauri::command]
+fn set_notes_preferences(
+    appearance: preferences::NotesAppearance,
+    app: AppHandle,
+) -> Result<(), String> {
+    preferences::set(&app, appearance)
 }
 
 impl AppState {
@@ -222,6 +290,18 @@ async fn save_notebook_preview(
     Ok(saved)
 }
 
+#[tauri::command]
+async fn save_card_tier_previews(
+    previews: Vec<SaveCardTierPreviewInput>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state
+        .client()?
+        .save_card_tier_previews(previews)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 fn notebook_window_label(id: &str) -> String {
     format!(
         "notebook-{}",
@@ -229,6 +309,207 @@ fn notebook_window_label(id: &str) -> String {
             .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
             .collect::<String>()
     )
+}
+
+fn card_editor_window_label(id: &str) -> String {
+    format!(
+        "card-editor-{}",
+        id.chars()
+            .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
+            .collect::<String>()
+    )
+}
+
+fn emit_card_editor_lifecycle(app: &AppHandle, session: &CardEditorSession, open: bool) {
+    if let Some(parent) = app.get_webview_window(&session.parent_label) {
+        let _ = parent.emit(
+            "notes:card-editor-lifecycle",
+            CardEditorLifecycle {
+                session_id: session.session_id.clone(),
+                notebook_id: session.notebook_id.clone(),
+                open,
+            },
+        );
+    }
+}
+
+fn restore_card_editor_parent(app: &AppHandle, session: &CardEditorSession) {
+    if let Some(parent) = app.get_webview_window(&session.parent_label) {
+        emit_card_editor_lifecycle(app, session, false);
+        let _ = parent.show();
+        let _ = parent.set_focus();
+    }
+}
+
+#[tauri::command]
+fn open_card_editor_window(
+    input: OpenCardEditorInput,
+    parent: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let existing = state
+        .card_editor_sessions
+        .lock()
+        .map_err(|_| "card editor session lock is unavailable".to_owned())?
+        .values()
+        .find(|session| session.notebook_id == input.notebook_id)
+        .cloned();
+    if let Some(existing) = existing {
+        if let Some(editor) = app.get_webview_window(&existing.editor_label) {
+            emit_card_editor_lifecycle(&app, &existing, true);
+            editor.show().map_err(|error| error.to_string())?;
+            editor.set_focus().map_err(|error| error.to_string())?;
+            return Ok(existing.session_id);
+        }
+    }
+
+    let session_id = uuid::Uuid::now_v7().to_string();
+    let editor_label = card_editor_window_label(&input.notebook_id);
+    let session = CardEditorSession {
+        session_id: session_id.clone(),
+        notebook_id: input.notebook_id,
+        notebook_title: input.notebook_title,
+        card_id: input.card_id,
+        tiers: input.tiers,
+        parent_label: parent.label().to_owned(),
+        editor_label: editor_label.clone(),
+    };
+    state
+        .card_editor_sessions
+        .lock()
+        .map_err(|_| "card editor session lock is unavailable".to_owned())?
+        .insert(session_id.clone(), session.clone());
+
+    let route = format!("index.html?cardEditorSession={session_id}");
+    let editor_result =
+        WebviewWindowBuilder::new(&app, editor_label, WebviewUrl::App(route.into()))
+            .parent(&parent)
+            .and_then(|builder| {
+                builder
+                    .title(format!("Edit Card — {}", session.notebook_title))
+                    .inner_size(1000.0, 760.0)
+                    .min_inner_size(760.0, 520.0)
+                    .decorations(true)
+                    .build()
+            });
+    let editor = match editor_result {
+        Ok(window) => window,
+        Err(error) => {
+            let _ = state
+                .card_editor_sessions
+                .lock()
+                .map(|mut sessions| sessions.remove(&session_id));
+            return Err(error.to_string());
+        }
+    };
+    emit_card_editor_lifecycle(&app, &session, true);
+    let cleanup_app = app.clone();
+    let cleanup_session_id = session_id.clone();
+    let cleanup_session = session.clone();
+    editor.on_window_event(move |event| {
+        if !matches!(event, WindowEvent::Destroyed) {
+            return;
+        }
+        let state = cleanup_app.state::<AppState>();
+        let _ = state
+            .card_editor_sessions
+            .lock()
+            .ok()
+            .and_then(|mut sessions| sessions.remove(&cleanup_session_id));
+        restore_card_editor_parent(&cleanup_app, &cleanup_session);
+    });
+    Ok(session_id)
+}
+
+#[tauri::command]
+fn card_editor_session(
+    session_id: String,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<CardEditorSession, String> {
+    let session = state
+        .card_editor_sessions
+        .lock()
+        .map_err(|_| "card editor session lock is unavailable".to_owned())?
+        .get(&session_id)
+        .cloned()
+        .ok_or_else(|| "card editor session does not exist".to_owned())?;
+    if session.editor_label != window.label() {
+        return Err("card editor session belongs to another window".to_owned());
+    }
+    Ok(session)
+}
+
+#[tauri::command]
+fn request_card_editor_save(
+    input: CardEditorSaveRequest,
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let session = state
+        .card_editor_sessions
+        .lock()
+        .map_err(|_| "card editor session lock is unavailable".to_owned())?
+        .get(&input.session_id)
+        .cloned()
+        .ok_or_else(|| "card editor session does not exist".to_owned())?;
+    if session.editor_label != window.label() || session.card_id != input.card_id {
+        return Err("card editor save does not match its session".to_owned());
+    }
+    app.get_webview_window(&session.parent_label)
+        .ok_or_else(|| "notebook window is no longer available".to_owned())?
+        .emit("notes:card-editor-save-request", input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn resolve_card_editor_save(
+    input: CardEditorSaveResult,
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let session = state
+        .card_editor_sessions
+        .lock()
+        .map_err(|_| "card editor session lock is unavailable".to_owned())?
+        .get(&input.session_id)
+        .cloned()
+        .ok_or_else(|| "card editor session does not exist".to_owned())?;
+    if session.parent_label != window.label() {
+        return Err("save result came from another notebook window".to_owned());
+    }
+    app.get_webview_window(&session.editor_label)
+        .ok_or_else(|| "card editor window is no longer available".to_owned())?
+        .emit("notes:card-editor-save-result", input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn close_card_editor_session(
+    session_id: String,
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let session = state
+        .card_editor_sessions
+        .lock()
+        .map_err(|_| "card editor session lock is unavailable".to_owned())?
+        .remove(&session_id)
+        .ok_or_else(|| "card editor session does not exist".to_owned())?;
+    if session.editor_label != window.label() {
+        state
+            .card_editor_sessions
+            .lock()
+            .map_err(|_| "card editor session lock is unavailable".to_owned())?
+            .insert(session_id, session);
+        return Err("card editor session belongs to another window".to_owned());
+    }
+    restore_card_editor_parent(&app, &session);
+    Ok(())
 }
 
 fn focused_notebook_window(app: &AppHandle) -> Option<WebviewWindow> {
@@ -871,11 +1152,16 @@ pub fn run() {
             configured_settings,
             config_error,
             initial_navigation: Mutex::new(initial_target),
+            card_editor_sessions: Mutex::new(HashMap::new()),
         })
+        .manage(desktop_menu::NativeMenuState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
+            if let Err(error) = desktop_menu::apply_settings_cog_symbol() {
+                eprintln!("could not install the Notes Settings menu icon: {error}");
+            }
             let handle = app.handle().clone();
             let mut handled = legacy_activity
                 .clone()
@@ -898,6 +1184,10 @@ pub fn run() {
             Ok(())
         })
         .menu(|app| {
+            let settings = IconMenuItemBuilder::with_id("app:settings", "Settings…")
+                .native_icon(NativeIcon::PreferencesGeneral)
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?;
             let toggle_favorite =
                 MenuItemBuilder::with_id("toggle_notebook_favorite", "Toggle Favorite")
                     .enabled(false)
@@ -912,6 +1202,8 @@ pub fn run() {
                     .build(app)?;
             let app_menu = SubmenuBuilder::new(app, "Notes")
                 .about(None)
+                .separator()
+                .item(&settings)
                 .separator()
                 .services()
                 .separator()
@@ -936,6 +1228,8 @@ pub fn run() {
                 .build()?;
             let view_menu = SubmenuBuilder::new(app, "View")
                 .item(&toggle_panel)
+                .separator()
+                .fullscreen()
                 .build()?;
             let window_menu = SubmenuBuilder::new(app, "Window")
                 .minimize()
@@ -955,17 +1249,30 @@ pub fn run() {
                 ])
                 .build()
         })
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "toggle_notebook_favorite" => {
-                emit_to_focused_notebook(app, "notes:native-toggle-favorite")
+        .on_menu_event(|app, event| {
+            if desktop_menu::handle_menu_event(app, &event) {
+                return;
             }
-            "export_notebook" => emit_to_focused_notebook(app, "notes:native-export-notebook"),
-            "toggle_notebook_panel" => {
-                emit_to_focused_notebook(app, "notes:native-toggle-notebook-panel")
+            match event.id().as_ref() {
+                "app:settings" => {
+                    if let Err(error) = preferences::show(app) {
+                        eprintln!("could not open Notes Settings: {error}");
+                    }
+                }
+                "toggle_notebook_favorite" => {
+                    emit_to_focused_notebook(app, "notes:native-toggle-favorite")
+                }
+                "export_notebook" => emit_to_focused_notebook(app, "notes:native-export-notebook"),
+                "toggle_notebook_panel" => {
+                    emit_to_focused_notebook(app, "notes:native-toggle-notebook-panel")
+                }
+                _ => {}
             }
-            _ => {}
         })
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Destroyed) {
+                desktop_menu::cleanup_window(window.app_handle(), window.label());
+            }
             if matches!(event, WindowEvent::Focused(true)) {
                 set_notebook_menu_enabled(
                     window.app_handle(),
@@ -991,6 +1298,8 @@ pub fn run() {
             });
         })
         .invoke_handler(tauri::generate_handler![
+            get_notes_preferences,
+            set_notes_preferences,
             data_service_status,
             initial_navigation,
             list_notebooks,
@@ -999,7 +1308,14 @@ pub fn run() {
             update_notebook,
             delete_notebook,
             save_notebook_preview,
+            save_card_tier_previews,
             open_notebook_window,
+            open_card_editor_window,
+            card_editor_session,
+            request_card_editor_save,
+            resolve_card_editor_save,
+            close_card_editor_session,
+            desktop_menu::commands::popup_native_context_menu,
             focus_notes_home,
             open_revise_for_notebook,
             list_plugin_installations,

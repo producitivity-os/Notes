@@ -1,5 +1,5 @@
 import * as React from "react";
-import { AlertTriangle, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, RefreshCw, X } from "@productivity-os/shared-ui/components/sf-symbols";
 
 import { Button } from "@productivity-os/shared-ui/components/ui/button";
 

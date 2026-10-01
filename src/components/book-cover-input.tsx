@@ -1,15 +1,16 @@
 import { useRef, useState } from "react";
-import { BookOpen, ImagePlus, X } from "lucide-react";
+import { BookOpen, ImagePlus, X } from "@productivity-os/shared-ui/components/sf-symbols";
 import { Button } from "@productivity-os/shared-ui/components/ui/button";
 import { Progress } from "@productivity-os/shared-ui/components/ui/progress";
 import { readNativeClipboardImage } from "@/api/notebook-media";
 import type { CardPluginImageInput } from "@/plugins/plugin-api";
 
 type Props = {
+  ariaLabel?: string;
   currentUrl?: string | null;
   value: CardPluginImageInput | null;
   removed: boolean;
-  onChange(value: CardPluginImageInput | null): void;
+  onChange(value: CardPluginImageInput | null): void | Promise<void>;
   onRemove(): void;
 };
 
@@ -67,6 +68,7 @@ async function imageInput(
 }
 
 export function BookCoverInput({
+  ariaLabel = "Book cover image input",
   currentUrl,
   value,
   removed,
@@ -93,7 +95,7 @@ export function BookCoverInput({
     setProgress(4);
     try {
       const next = await load(reportProgress);
-      onChange(next);
+      await onChange(next);
       reportProgress(100);
       await new Promise((resolve) => window.setTimeout(resolve, 180));
     } catch (error) {
@@ -148,7 +150,7 @@ export function BookCoverInput({
         className="book-cover-preview"
         data-selected={selected || undefined}
         tabIndex={0}
-        aria-label="Book cover image input"
+        aria-label={ariaLabel}
         aria-busy={progress !== null}
         onClick={(event) => {
           event.currentTarget.focus();

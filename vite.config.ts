@@ -1,7 +1,7 @@
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import type { Plugin } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -32,7 +32,7 @@ export default defineConfig({
     strictPort: true,
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1441 } : undefined,
-    fs: { allow: [path.resolve(import.meta.dirname, "../..")] },
+    fs: { allow: [searchForWorkspaceRoot(process.cwd())] },
     watch: { ignored: ["**/src-tauri/**"] },
   },
   resolve: {

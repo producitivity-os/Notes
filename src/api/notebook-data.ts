@@ -57,6 +57,13 @@ export type PluginInstallation = {
   installedAt: number | null;
 };
 export type InitialNavigation = { notebookId: string; objectId: string | null };
+export type CardTierPreviewInput = {
+  documentId: string;
+  cardId: string;
+  tierId: string;
+  tierRevision: number;
+  dataUrl: string;
+};
 export type PersonRecord = {
   id: string;
   name: string;
@@ -75,16 +82,7 @@ export const isTauri =
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 const memory = new Map<string, NotebookDocument>();
-const memoryPlugins = new Map<string, PluginInstallation>([
-  [
-    "notes.question-card",
-    {
-      pluginId: "notes.question-card",
-      installed: true,
-      installedAt: Date.now(),
-    },
-  ],
-]);
+const memoryPlugins = new Map<string, PluginInstallation>();
 const memoryPersons = new Map<string, PersonRecord>();
 const clone = <T>(value: T): T => structuredClone(value);
 
@@ -111,7 +109,7 @@ export function createEmptyNotebookState(): EndlessCanvasState {
 export function canvasToSnapshot(state: EndlessCanvasState): CanvasSnapshot {
   const layers = state.layers ?? [];
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     activeLayerId: state.activeLayerId ?? layers[0]?.id ?? "main",
     focusedLayerId: state.focusedLayerId ?? null,
     unfocusedLayerOpacity: state.unfocusedLayerOpacity ?? 0.25,
@@ -210,6 +208,12 @@ export const notebookData = {
     const current = memory.get(id);
     if (!current) return false;
     current.previewDataUrl = dataUrl;
+    return true;
+  },
+  async saveCardTierPreviews(
+    previews: CardTierPreviewInput[],
+  ): Promise<boolean> {
+    if (isTauri) return invoke("save_card_tier_previews", { previews });
     return true;
   },
   async open(

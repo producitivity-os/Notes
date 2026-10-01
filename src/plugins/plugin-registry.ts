@@ -154,9 +154,9 @@ export class NotesPluginRegistry implements CanvasPluginCardProvider {
             changed = true;
           }
         }
-      } else {
-        changed = this.migrateCards(card.elements) || changed;
       }
+      for (const tier of card.tiers)
+        changed = this.migrateCards(tier.elements) || changed;
     }
     return changed;
   }

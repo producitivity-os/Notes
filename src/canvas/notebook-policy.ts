@@ -101,6 +101,7 @@ type LegacyTextStyleObject = CanvasObject & {
   borderColor?: number;
   borderWidth?: number;
   elements?: CanvasObject[];
+  tiers?: Array<{ elements?: CanvasObject[] }>;
 };
 
 export function migrateLegacyNotebookTextStyles(
@@ -121,6 +122,9 @@ export function migrateLegacyNotebookTextStyles(
     }
     for (const child of object.elements ?? [])
       visit(child as LegacyTextStyleObject);
+    for (const tier of object.tiers ?? [])
+      for (const child of tier.elements ?? [])
+        visit(child as LegacyTextStyleObject);
   };
   for (const object of objects) visit(object as LegacyTextStyleObject);
   return changed;

@@ -1,6 +1,9 @@
-import { Eye, EyeOff, Focus, Layers3, Plus, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Focus, Layers3, Plus, Trash2 } from "@productivity-os/shared-ui/components/sf-symbols";
 import type { CanvasLayersSlotProps } from "@productivity-os/canvas";
 import type { NotebookDocument } from "@/api/notebook-data";
+import { notebookMediaUrl } from "@/api/notebook-media";
+import { BookCoverInput } from "@/components/book-cover-input";
+import type { CardPluginImageInput } from "@/plugins/plugin-api";
 
 type Props = CanvasLayersSlotProps & {
   notebook: NotebookDocument;
@@ -10,12 +13,14 @@ type Props = CanvasLayersSlotProps & {
       Pick<NotebookDocument, "title" | "project" | "icon" | "coverMediaId">
     >,
   ): void;
+  onCoverImage(value: CardPluginImageInput): void | Promise<void>;
 };
 
 export function NotebookPanel({
   notebook,
   open,
   onMetadata,
+  onCoverImage,
   layers,
   activeLayerId,
   focusedLayerId,
@@ -74,12 +79,17 @@ export function NotebookPanel({
         </label>
         <label>
           Cover
-          <input
-            value={notebook.coverMediaId ?? ""}
-            placeholder="Media ID or URL"
-            onChange={(event) =>
-              onMetadata({ coverMediaId: event.currentTarget.value || null })
+          <BookCoverInput
+            ariaLabel="Notebook cover image input"
+            currentUrl={
+              notebook.coverMediaId
+                ? notebookMediaUrl(notebook.coverMediaId, "thumbnail")
+                : null
             }
+            value={null}
+            removed={false}
+            onChange={(value) => (value ? onCoverImage(value) : undefined)}
+            onRemove={() => onMetadata({ coverMediaId: null })}
           />
         </label>
       </div>

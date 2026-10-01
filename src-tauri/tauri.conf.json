@@ -17,9 +17,9 @@
       {
         "label": "main",
         "title": "Notes",
-        "width": 1180,
-        "height": 780,
-        "minWidth": 760,
+        "width": 980,
+        "height": 680,
+        "minWidth": 720,
         "minHeight": 520,
         "decorations": true,
         "titleBarStyle": "Overlay",

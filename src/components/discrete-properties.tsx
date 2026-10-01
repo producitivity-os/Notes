@@ -8,12 +8,13 @@ import {
   CircleOff,
   Italic,
   Underline,
-} from "lucide-react";
+} from "@productivity-os/shared-ui/components/sf-symbols";
 import {
   CANVAS_MIXED_VALUE,
   type CanvasPropertiesSlotProps,
   type CanvasPropertyField,
   type CanvasPropertyPatch,
+  type CanvasCardObject,
   type PluginCard,
 } from "@productivity-os/canvas";
 import type { CardPluginDefinition } from "@/plugins/plugin-api";
@@ -24,6 +25,7 @@ type Props = CanvasPropertiesSlotProps & {
   plugin: CardPluginDefinition | null;
   pluginInstalled: boolean;
   notebooks: readonly NotebookSummary[];
+  onEditTiers(card: CanvasCardObject): void;
 };
 
 const COLORS = [0x1f2530, 0xffffff, 0x94a3b8, 0x3b82f6, 0xef4444];
@@ -41,30 +43,42 @@ export function DiscreteProperties({
   plugin,
   pluginInstalled,
   notebooks,
+  onEditTiers,
 }: Props) {
-  const selected =
+  const selectedCard =
     selection.selectedObjects.length === 1 &&
-    selection.selectedObjects[0]?.type === "card" &&
-    (selection.selectedObjects[0] as PluginCard).kind === "plugin"
-      ? (selection.selectedObjects[0] as PluginCard)
+    selection.selectedObjects[0]?.type === "card"
+      ? (selection.selectedObjects[0] as CanvasCardObject)
+      : null;
+  const selected =
+    selectedCard?.kind === "plugin"
+      ? (selectedCard as PluginCard)
       : null;
   if (selected && !plugin)
     return (
       <Panel title="Plugin unavailable">
         <p>This card is preserved. Reinstall its plugin to edit it.</p>
+        <TierButton card={selected} onEdit={onEditTiers} />
       </Panel>
     );
   if (selected && plugin && !pluginInstalled)
     return (
       <Panel title={`${plugin.manifest.name} · read only`}>
         <p>Reinstall this plugin to edit the card.</p>
+        <TierButton card={selected} onEdit={onEditTiers} />
       </Panel>
     );
-  if (selected && plugin?.propertiesPanel === "hidden") return null;
+  if (selected && plugin?.propertiesPanel === "hidden")
+    return (
+      <Panel title={plugin.manifest.name}>
+        <TierButton card={selected} onEdit={onEditTiers} />
+      </Panel>
+    );
   if (selected && selected.pluginId === "notes.notebook-card") {
     const data = selected.pluginData;
     return (
       <Panel title="Notebook card">
+        <TierButton card={selected} onEdit={onEditTiers} />
         <label>
           Target
           <select
@@ -103,6 +117,7 @@ export function DiscreteProperties({
             : `${plugin.manifest.name} · read only`
         }
       >
+        <TierButton card={selected} onEdit={onEditTiers} />
         {Editor ? (
           <Editor
             card={selected}
@@ -118,7 +133,12 @@ export function DiscreteProperties({
       </Panel>
     );
   }
-  if (context.fields.length === 0) return null;
+  if (context.fields.length === 0)
+    return selectedCard ? (
+      <Panel title="Card">
+        <TierButton card={selectedCard} onEdit={onEditTiers} />
+      </Panel>
+    ) : null;
   return (
     <Panel
       title={
@@ -129,10 +149,27 @@ export function DiscreteProperties({
           : "Defaults"
       }
     >
+      {selectedCard && (
+        <TierButton card={selectedCard} onEdit={onEditTiers} />
+      )}
       {context.fields.map((field) => (
         <PresetField key={field.name} field={field} onPatch={onPatch} />
       ))}
     </Panel>
+  );
+}
+
+function TierButton({
+  card,
+  onEdit,
+}: {
+  card: CanvasCardObject;
+  onEdit(card: CanvasCardObject): void;
+}) {
+  return (
+    <Button type="button" variant="outline" onClick={() => onEdit(card)}>
+      Edit tiers · {card.tiers.length}
+    </Button>
   );
 }
 
