@@ -1,0 +1,260 @@
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.native-canvas-shell,
+.native-page-viewport,
+.native-page-fit {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.native-canvas-shell {
+  background: light-dark(#e8edf4, #171a1f);
+}
+
+.native-page-fit {
+  display: grid;
+  place-items: center;
+}
+
+.native-page-paper {
+  position: absolute;
+  overflow: hidden;
+  transform-origin: center;
+  border: 1px solid light-dark(rgb(48 58 72 / 18%), rgb(255 255 255 / 15%));
+  border-radius: 4px;
+  background: light-dark(#fff, #22262c);
+  box-shadow: 0 18px 55px rgb(15 23 42 / 18%);
+}
+
+.native-page-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.native-canvas-shell .canvas-floating-toolbar {
+  position: fixed;
+  z-index: 100;
+  top: 14px;
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.native-canvas-loading {
+  width: 100%;
+  height: 100%;
+  background: light-dark(#e8edf4, #171a1f);
+}
+
+.card-editor-dialog {
+  width: min(720px, calc(100vw - 40px));
+  max-width: none;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+
+.card-editor-form,
+.card-editor-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.book-editor-form {
+  grid-template-columns: 188px minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.card-editor-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.card-editor-fields textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.card-editor-error,
+.card-editor-field-error,
+.book-cover-message {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 10px;
+}
+
+.card-editor-dialog kbd {
+  margin-left: 4px;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: 9px;
+}
+
+.notebook-card-picker {
+  display: grid;
+  max-height: 320px;
+  gap: 4px;
+  overflow: auto;
+}
+
+.notebook-card-picker button {
+  justify-content: flex-start;
+}
+
+.book-cover-input {
+  display: grid;
+  width: 172px;
+  gap: 8px;
+}
+
+.book-cover-preview {
+  position: relative;
+  display: grid;
+  width: 172px;
+  height: 258px;
+  box-sizing: border-box;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.book-cover-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.book-cover-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(14 14 14 / 38%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.book-cover-preview:hover .book-cover-overlay,
+.book-cover-preview:focus-within .book-cover-overlay {
+  opacity: 1;
+}
+
+.book-cover-overlay-actions {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.blank-card-editor-dialog {
+  display: flex;
+  width: min(960px, calc(100vw - 40px));
+  height: min(860px, calc(100vh - 40px));
+  max-width: none;
+  max-height: calc(100vh - 40px);
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 20px;
+}
+
+body:has(.tiered-card-editor-dialog) [data-slot="dialog-overlay"] {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.tiered-card-editor-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: light-dark(#f4f6f8, #171a1f);
+}
+
+.card-tier-header {
+  position: absolute;
+  z-index: 22;
+  top: 16px;
+  right: 16px;
+  left: 16px;
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.card-tier-navigation,
+.card-tier-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--popover) 86%, transparent);
+  box-shadow: 0 6px 20px rgb(15 23 42 / 10%);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.card-tier-navigation select,
+.card-tier-actions input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+}
+
+.card-tier-navigation select {
+  width: min(190px, 28vw);
+  padding: 4px 5px;
+}
+
+.card-tier-actions input {
+  width: min(210px, 30vw);
+  padding: 4px 7px;
+}
+
+.tiered-card-editor-stage .blank-card-editor-canvas {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  overflow: hidden;
+}
+
+.blank-card-editor-canvas .canvas-floating-toolbar {
+  top: 62px;
+}
+
+.tiered-card-save-error {
+  position: absolute;
+  z-index: 24;
+  right: 18px;
+  bottom: 18px;
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--popover);
+  color: var(--destructive);
+}

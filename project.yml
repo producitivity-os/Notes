@@ -1,0 +1,235 @@
+name: Notes
+
+options:
+  bundleIdPrefix: com.productivity-os
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    GENERATE_INFOPLIST_FILE: NO
+
+targets:
+  NotebookExporter:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Native/Sources/NotebookKit
+      - path: Native/Sources/Notes/LegacyNotebookMigrator.swift
+      - path: Native/Sources/NotebookExporter
+    settings:
+      base:
+        PRODUCT_NAME: notebook-exporter
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+    dependencies:
+      - sdk: libsqlite3.tbd
+
+  Notes:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Native/Sources/NotebookKit
+      - path: Native/Sources/Notes
+    resources:
+      - path: src-tauri/icons/icon.icns
+        buildPhase: resources
+      - path: Native/Resources/NotebookDocument.icns
+        buildPhase: resources
+    info:
+      path: Native/Config/Notes-Info.plist
+      properties:
+        CFBundleDisplayName: Notes
+        CFBundleIconFile: icon.icns
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.productivity
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.productivity-os.notes.navigation
+            CFBundleURLSchemes:
+              - productivity-notes
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Productivity Notebook
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.productivity-os.notebook
+            CFBundleTypeIconFile: NotebookDocument.icns
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.productivity-os.notebook
+            UTTypeDescription: Productivity Notebook
+            UTTypeConformsTo:
+              - com.apple.package
+              - public.data
+            UTTypeIconFile: NotebookDocument.icns
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - notebook
+                - ntbk
+              public.mime-type: application/vnd.productivity-os.notebook
+    entitlements:
+      path: Native/Config/Notes.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes
+        PRODUCT_NAME: Notes
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+    preBuildScripts:
+      - name: Verify Canvas Web App
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          if [ ! -f "$SRCROOT/dist-native/native-canvas.html" ]; then
+            echo "error: Canvas assets are missing. Run 'yarn build:native-canvas' before xcodebuild."
+            exit 1
+          fi
+    postBuildScripts:
+      - name: Embed Canvas Web App
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/CanvasWeb"
+          mkdir -p "$destination"
+          rsync -a --delete "$SRCROOT/dist-native/" "$destination/"
+    dependencies:
+      - sdk: libsqlite3.tbd
+      - target: NotebookThumbnail
+        embed: true
+      - target: NotebookPreview
+        embed: true
+      - target: ReviseNotebookAction
+        embed: true
+
+  NotebookThumbnail:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Native/Sources/NotebookKit
+      - path: Native/Sources/NotebookThumbnail
+    info:
+      path: Native/Config/NotebookThumbnail-Info.plist
+      properties:
+        CFBundleDisplayName: Notebook Thumbnail
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.thumbnail
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ThumbnailProvider
+          NSExtensionAttributes:
+            QLSupportedContentTypes:
+              - com.productivity-os.notebook
+            QLThumbnailMinimumDimension: 32
+    entitlements:
+      path: Native/Config/NotesExtension.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.thumbnail
+        PRODUCT_NAME: NotebookThumbnail
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+
+  NotebookPreview:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Native/Sources/NotebookKit
+      - path: Native/Sources/NotebookPreview
+    info:
+      path: Native/Config/NotebookPreview-Info.plist
+      properties:
+        CFBundleDisplayName: Notebook Preview
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
+          NSExtensionAttributes:
+            QLIsDataBasedPreview: true
+            QLSupportedContentTypes:
+              - com.productivity-os.notebook
+    entitlements:
+      path: Native/Config/NotesExtension.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.preview
+        PRODUCT_NAME: NotebookPreview
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+
+  ReviseNotebookAction:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Native/Sources/NotebookKit
+      - path: Native/Sources/ReviseNotebookAction
+    info:
+      path: Native/Config/ReviseNotebookAction-Info.plist
+      properties:
+        CFBundleDisplayName: Revise Notebook
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ReviseNotebookAction
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsFileWithMaxCount: 1
+            NSExtensionServiceRoleType: NSExtensionServiceRoleTypeViewer
+            NSExtensionServiceAllowsFinderPreviewItem: true
+            NSExtensionServiceFinderPreviewLabel: Revise Notebook
+    entitlements:
+      path: Native/Config/NotesExtension.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.revise-action
+        PRODUCT_NAME: ReviseNotebookAction
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+
+  NotesTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Native/Tests/NotesTests
+    dependencies:
+      - target: Notes
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.tests
+        CODE_SIGN_STYLE: Automatic
+
+schemes:
+  NotebookExporter:
+    shared: true
+    build:
+      targets:
+        NotebookExporter: all
+    run:
+      config: Release
+
+  Notes:
+    shared: true
+    build:
+      targets:
+        Notes: all
+        NotesTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - NotesTests
+    archive:
+      config: Release

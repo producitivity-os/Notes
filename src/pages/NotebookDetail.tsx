@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, RefreshCw, Square, X } from "@productivity-os/shared-ui/components/sf-symbols"
-import { IconGlyph } from "@productivity-os/shared-ui/components/icon-select"
 import { WorkspaceDocumentHeader } from "@productivity-os/shared-ui/components/app-header"
 import { Button } from "@productivity-os/shared-ui/components/ui/button"
 import { Progress } from "@productivity-os/shared-ui/components/ui/progress"
@@ -44,10 +43,8 @@ import {
   pluginData,
   snapshotToCanvas,
   type NotebookDocument,
-  type NotebookSummary,
 } from "@/api/notebook-data"
 import { NotebookPanel } from "@/components/notebook-panel"
-import { DiscreteProperties } from "@/components/discrete-properties"
 import { BlankCardEditorDialog } from "@/components/blank-card-editor-dialog"
 import { CardTierPreviewRegenerator } from "@/components/card-tier-preview-regenerator"
 import { MarkdownToolIcon } from "@/components/markdown-tool-icon"
@@ -183,7 +180,6 @@ export function NotebookDetail({ notebookId }: { notebookId: string }) {
   })
   const allowCloseRef = useRef(false)
   const [notebook, setNotebook] = useState<NotebookDocument | null>(null)
-  const [notebooks, setNotebooks] = useState<NotebookSummary[]>([])
   const [canvasState, setCanvasState] = useState<EndlessCanvasState | null>(null)
   const [tool, setTool] = useState<CanvasTool>("select")
   const [pane, setPane] = useState<CanvasPaneContext>({
@@ -366,11 +362,10 @@ export function NotebookDetail({ notebookId }: { notebookId: string }) {
     }
     void Promise.all([
       track(notebookData.get(notebookId), "Notebook loaded"),
-      track(notebookData.list(), "Notebook index loaded"),
       track(pluginData.list(), "Card plugins loaded"),
       track(personData.list(), "People loaded"),
     ])
-      .then(([stored, all, installations, people]) => {
+      .then(([stored, installations, people]) => {
         if (cancelled) return
         setLoadState((current) => ({
           ...current,
@@ -410,7 +405,6 @@ export function NotebookDetail({ notebookId }: { notebookId: string }) {
         activeLayerRef.current = initialState.activeLayerId ?? "main"
         setZoom(initialState.viewport?.scale ?? 1)
         setNotebook(document)
-        setNotebooks(all)
         setCanvasState(initialState)
         enqueueTierPreviews(initialState.objects, true)
         setLoadState((current) => ({
@@ -1145,25 +1139,25 @@ export function NotebookDetail({ notebookId }: { notebookId: string }) {
       (object) => object.id === cardId && object.type === "card",
     ) as CanvasCardObject | undefined
     if (!existing) throw new Error("This card is no longer in the notebook.")
-    const normalizedTiers = structuredClone(tiers).map((tier) => {
-      const stored = existing.tiers.find((candidate) => candidate.id === tier.id)
-      return {
-        ...tier,
-        width: stored?.width ?? existing.width,
-        height: stored?.height ?? existing.height,
-        elements: tier.elements.map((element) =>
-          canvasObjectFactory.hydrate({
-            ...element,
-            layerId: existing.layerId,
-          } as CanvasObject),
-        ),
-      }
-    })
+    const normalizedTiers = structuredClone(tiers).map((tier) => ({
+      ...tier,
+      elements: tier.elements.map((element) =>
+        canvasObjectFactory.hydrate({
+          ...element,
+          layerId: existing.layerId,
+        } as CanvasObject),
+      ),
+    }))
+    const front = normalizedTiers[0]
     const fixed = canvasObjectFactory.hydrate({
       ...structuredClone(existing),
+      width: front?.width ?? existing.width,
+      height: front?.height ?? existing.height,
       tiers: normalizedTiers,
     } as unknown as CanvasObject) as CanvasCardObject
     canvasRef.current?.updateObject(existing.id, {
+      width: fixed.width,
+      height: fixed.height,
       tiers: fixed.tiers,
     } as Partial<CanvasCardObject>)
     await notebookData.saveCardTierPreviews(
@@ -1211,8 +1205,7 @@ export function NotebookDetail({ notebookId }: { notebookId: string }) {
       <div className="detail-workspace" inert={cardEditorWindowOpen ? true : undefined}>
         <WorkspaceDocumentHeader
           className="detail-document-header absolute inset-x-0 top-0"
-          icon={<IconGlyph name={notebook.icon || "file-text"} />}
-          title={notebook.title}
+          title=""
         />
         <CanvasSurfaceContextMenu
           canvasRef={canvasRef}
@@ -1241,28 +1234,6 @@ export function NotebookDetail({ notebookId }: { notebookId: string }) {
                 onCoverImage={setCoverImage}
               />
             )}
-            propertiesSlot={(props) => {
-              const object =
-                props.selection.selectedObjects.length === 1
-                  ? props.selection.selectedObjects[0]
-                  : null
-              const card =
-                object?.type === "card" && (object as PluginCard).kind === "plugin"
-                  ? (object as PluginCard)
-                  : null
-              const plugin = card ? notesPlugins.definition(card.pluginId) : null
-              return (
-                <DiscreteProperties
-                  {...props}
-                  plugin={plugin}
-                  pluginInstalled={
-                    card ? notesPlugins.isInstalled(card.pluginId) : false
-                  }
-                  notebooks={notebooks}
-                  onEditTiers={openTierEditor}
-                />
-              )
-            }}
             objectOverlaySlot={(overlay) => {
               if (
                 !inlinePluginEditor ||

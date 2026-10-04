@@ -387,7 +387,7 @@ fn open_card_editor_window(
             .parent(&parent)
             .and_then(|builder| {
                 builder
-                    .title(format!("Edit Card — {}", session.notebook_title))
+                    .title("")
                     .inner_size(1000.0, 760.0)
                     .min_inner_size(760.0, 520.0)
                     .decorations(true)

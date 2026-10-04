@@ -24,7 +24,7 @@ const disableUnusedMathJaxSpeechWorker = (): Plugin => ({
   },
 });
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [disableUnusedMathJaxSpeechWorker(), react(), tailwindcss()],
   clearScreen: false,
   server: {
@@ -44,4 +44,14 @@ export default defineConfig({
       ),
     },
   },
-});
+  ...(mode === "native-canvas"
+    ? {
+        base: "./",
+        build: {
+          outDir: "dist-native",
+          emptyOutDir: true,
+          rollupOptions: { input: path.resolve(import.meta.dirname, "native-canvas.html") },
+        },
+      }
+    : {}),
+}));

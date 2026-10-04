@@ -16,28 +16,47 @@ test("tier editor autosaves and forced dismissal flushes instead of cancelling",
   assert.match(editor, /await onClose\(\)/)
   assert.doesNotMatch(editor, /DialogFooter|>\s*Save\s*<|>\s*Cancel\s*</)
   assert.doesNotMatch(editor, /Saved|Saving…|card-tier-dimensions/)
-  assert.match(editor, /initialStatesRef\.current!\.get\(tier\.id\)/)
-  assert.match(styles, /\.card-tier-appendage \{[\s\S]*?border-top:/)
-  assert.match(editor, /className="card-tier-appendage"/)
+  assert.equal(editor.match(/<EndlessCanvas\s/g)?.length, 1)
+  assert.match(editor, /className="tiered-card-editor-stage"/)
+  assert.match(editor, /viewportMode: "bounded"/)
+  assert.match(editor, /candidate !== "hand"/)
+  assert.doesNotMatch(editor, /scrollIntoView|tiered-card-editor-scroll/)
+  assert.match(styles, /\.tiered-card-editor-stage \{[\s\S]*?overflow: hidden;/)
+  assert.match(
+    styles,
+    /\.blank-card-editor-canvas \.canvas-floating-toolbar \{\s*top: 14px;/,
+  )
   assert.match(editor, /onClick=\{addTier\}/)
   assert.match(
     styles,
-    /\.card-tier-section \.blank-card-editor-canvas \{\s*position: absolute;\s*inset: 0;/,
+    /\.tiered-card-editor-stage \.blank-card-editor-canvas \{\s*position: absolute;\s*inset: 0;/,
   )
 })
 
-test("card bounds stay fixed while tier content and previews are saved", () => {
+test("the native window bounds the editor and controls the shared tier size", () => {
   const detail = source("../src/pages/NotebookDetail.tsx")
   const editor = source("../src/components/blank-card-editor-dialog.tsx")
-  const canvas = source("../../../../packages/canvas/src/core/runtime/canvas.ts")
-  assert.match(detail, /objectCapabilities: \{ card: \{ resizable: false/)
-  assert.match(detail, /preserveCardDimensions: true/)
-  assert.match(detail, /const width = 220;?\s*const height = 140;?/)
-  assert.match(detail, /width: stored\?\.width \?\? existing\.width/)
-  assert.doesNotMatch(detail, /expandCardToContent\(fixed\)/)
-  assert.doesNotMatch(editor, /aria-label=\{`\$\{tier\.name\} width`\}/)
-  assert.doesNotMatch(editor, /aria-label=\{`\$\{tier\.name\} height`\}/)
-  assert.match(canvas, /!candidate\.capabilities\.resizable\) return false/)
+  const rust = source("../src-tauri/src/lib.rs")
+  assert.match(editor, /new ResizeObserver\(resize\)/)
+  assert.match(editor, /stage\.getBoundingClientRect\(\)/)
+  assert.match(editor, /current\.map\(\(tier\) => \(\{[\s\S]*?width,[\s\S]*?height,/)
+  assert.match(detail, /width: front\?\.width \?\? existing\.width/)
+  assert.match(detail, /height: front\?\.height \?\? existing\.height/)
+  assert.match(detail, /width: fixed\.width,[\s\S]*height: fixed\.height,/)
+  assert.match(rust, /\.inner_size\(1000\.0, 760\.0\)/)
+  assert.match(rust, /\.min_inner_size\(760\.0, 520\.0\)/)
+})
+
+test("tier creation keeps every tier reachable without mounting extra canvases", () => {
+  const editor = source("../src/components/blank-card-editor-dialog.tsx")
+  assert.match(editor, /aria-label="Previous tier"/)
+  assert.match(editor, /aria-label="Next tier"/)
+  assert.match(editor, /aria-label="Active tier"/)
+  assert.match(editor, /selectTier\(event\.currentTarget\.value\)/)
+  assert.match(editor, /await captureActivePreview\(\)/)
+  assert.match(editor, /activeTierIdRef\.current = id/)
+  assert.match(editor, /const nextActive = next\[Math\.min\(currentIndex, next\.length - 1\)\]/)
+  assert.equal(editor.match(/<EndlessCanvas\s/g)?.length, 1)
 })
 
 test("native card editor windows use acknowledged saves and silent status UI", () => {
@@ -53,6 +72,8 @@ test("native card editor windows use acknowledged saves and silent status UI", (
   assert.match(detail, /getCurrentWindow\(\)\.listen<CardEditorSaveRequest>/)
   assert.match(rust, /WebviewWindowBuilder::new/)
   assert.match(rust, /\.parent\(&parent\)/)
+  assert.match(rust, /\.title\(""\)/)
+  assert.doesNotMatch(rust, /Edit Card —/)
   assert.doesNotMatch(rust, /parent\s*\.set_enabled\(false\)/)
   assert.match(rust, /notes:card-editor-lifecycle/)
   assert.match(rust, /restore_card_editor_parent/)
@@ -200,12 +221,13 @@ test("desktop controls use SF Symbols while the notebook canvas keeps its classi
   assert.doesNotMatch(reminders, /lucide-react/)
 })
 
-test("all cards expose tier editing and notebook covers have settings and library controls", () => {
-  const properties = source("../src/components/discrete-properties.tsx")
+test("cards open tier editing without a properties panel and notebook covers retain their controls", () => {
+  const detail = source("../src/pages/NotebookDetail.tsx")
   const panel = source("../src/components/notebook-panel.tsx")
   const home = source("../src/pages/Home.tsx")
-  assert.match(properties, /Edit tiers/)
-  assert.match(properties, /propertiesPanel === "hidden"/)
+  assert.match(detail, /openTierEditor\(genericCard\)/)
+  assert.doesNotMatch(detail, /propertiesSlot=/)
+  assert.doesNotMatch(detail, /DiscreteProperties/)
   assert.match(panel, /BookCoverInput/)
   assert.match(home, /Set cover|Replace cover/)
   assert.match(home, /Clear cover/)

@@ -438,6 +438,8 @@ test("notebook detail windows expose native dragging and stable canvas adapters"
   }
 
   assert.match(detail, /<WorkspaceDocumentHeader/)
+  assert.match(detail, /<WorkspaceDocumentHeader[\s\S]*?title=""/)
+  assert.doesNotMatch(detail, /icon=\{<IconGlyph name=\{notebook\.icon/)
   assert.match(sharedHeader, /function WorkspaceDocumentHeader/)
   assert.match(sharedHeader, /data-tauri-drag-region/)
   assert.match(sharedHeader, /text-\[10px\]/)

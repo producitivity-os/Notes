@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit && vite build",
+    "build:native-canvas": "tsc -p tsconfig.app.json --noEmit && vite build --mode native-canvas",
     "preview": "vite preview",
     "tauri": "tauri"
   },

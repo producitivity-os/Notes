@@ -1,6 +1,8 @@
 # Node / frontend
 node_modules/
 dist/
+dist-native/
+.build/
 .vite/
 *.local
 

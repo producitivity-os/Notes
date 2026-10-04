@@ -1,5 +1,4 @@
 import {
-  Fragment,
   forwardRef,
   useCallback,
   useEffect,
@@ -8,7 +7,14 @@ import {
   useRef,
   useState,
 } from "react"
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "@productivity-os/shared-ui/components/sf-symbols"
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Trash2,
+} from "@productivity-os/shared-ui/components/sf-symbols"
 import {
   CanvasToolbar,
   CanvasSurfaceContextMenu,
@@ -50,6 +56,12 @@ type Props = {
     }>,
   ): void | Promise<void>
   onClose(): void | Promise<void>
+}
+
+type TierPreview = {
+  tierId: string
+  tierRevision: number
+  dataUrl: string
 }
 
 export type BlankCardEditorHandle = {
@@ -100,18 +112,18 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
       initialTiers.map(cloneTier),
     )
     const tiersRef = useRef(tiers)
-    const initialStatesRef = useRef<Map<string, EndlessCanvasState> | null>(null)
-    if (initialStatesRef.current === null) {
-      initialStatesRef.current = new Map(tiers.map((tier) => [tier.id, stateFor(tier)]))
-    }
-    const canvasRefs = useRef(new Map<string, EndlessCanvasHandle>())
-    const tierSectionRefs = useRef(new Map<string, HTMLElement>())
+    const canvasRef = useRef<EndlessCanvasHandle>(null)
+    const stageRef = useRef<HTMLDivElement>(null)
+    const activeTierIdRef = useRef(initialTiers[0]?.id ?? "front")
+    const previewCacheRef = useRef(new Map<string, TierPreview>())
+    const navigationQueueRef = useRef<Promise<void>>(Promise.resolve())
     const timerRef = useRef<number | null>(null)
+    const resizeTimerRef = useRef<number | null>(null)
     const closingRef = useRef(false)
     const mutationVersionRef = useRef(0)
     const persistedVersionRef = useRef(-1)
     const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true))
-    const [activeTierId, setActiveTierId] = useState("front")
+    const [activeTierId, setActiveTierId] = useState(activeTierIdRef.current)
     const [saveError, setSaveError] = useState<string | null>(null)
     const rememberedRef = useRef<Partial<Record<CanvasToolGroupId, CanvasTool>>>({
       shapes: "rect",
@@ -120,7 +132,10 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
       image: "image",
     })
     const [tool, setTool] = useState<CanvasTool>("select")
-    const enabledTools = toolsForNotebookDepth(1)
+    const enabledTools = useMemo(
+      () => toolsForNotebookDepth(1).filter((candidate) => candidate !== "hand"),
+      [],
+    )
     const nativeClipboard = useMemo(createTauriCanvasClipboard, [])
     const options = useMemo<EndlessCanvasOptions>(
       () => ({
@@ -128,6 +143,7 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
         assets,
         clipboard: nativeClipboard,
         defaultTextFormat: "markdown",
+        viewportMode: "bounded",
         canInsertObject: (object) => object.type !== "card",
       }),
       [assets, nativeClipboard],
@@ -150,6 +166,23 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
       [initialTiers],
     )
 
+    const captureActivePreview = useCallback(async () => {
+      const tierId = activeTierIdRef.current
+      const tier = tiersRef.current.find((candidate) => candidate.id === tierId)
+      if (!tier || (tier.id === "front" && tier.kind !== "canvas")) return
+      const dataUrl = await canvasRef.current?.captureSnapshot({
+        format: "jpeg",
+        quality: 0.8,
+        resolution: 0.5,
+      })
+      if (!dataUrl) return
+      previewCacheRef.current.set(tier.id, {
+        tierId: tier.id,
+        tierRevision: tier.revision,
+        dataUrl,
+      })
+    }, [])
+
     const flush = useCallback(() => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
       timerRef.current = null
@@ -162,26 +195,14 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
 
         const savingVersion = mutationVersionRef.current
         try {
+          await captureActivePreview()
           const next = snapshot()
-          const previews = (
-            await Promise.all(
-              next.map(async (tier) => {
-                if (tier.id === "front" && tier.kind !== "canvas") return null
-                const dataUrl = await canvasRefs.current.get(tier.id)?.captureSnapshot({
-                  format: "jpeg",
-                  quality: 0.8,
-                  resolution: 0.5,
-                })
-                return dataUrl
-                  ? {
-                      tierId: tier.id,
-                      tierRevision: tier.revision,
-                      dataUrl,
-                    }
-                  : null
-              }),
-            )
-          ).filter((value) => value !== null)
+          const currentRevisions = new Map(
+            next.map((tier) => [tier.id, tier.revision]),
+          )
+          const previews = [...previewCacheRef.current.values()].filter(
+            (preview) => currentRevisions.get(preview.tierId) === preview.tierRevision,
+          )
           await onSave(next, previews)
           persistedVersionRef.current = savingVersion
           return true
@@ -195,7 +216,7 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
       })
       saveQueueRef.current = operation
       return operation
-    }, [onSave, snapshot])
+    }, [captureActivePreview, onSave, snapshot])
 
     const scheduleSave = useCallback(() => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
@@ -205,6 +226,7 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
     const updateTiers = useCallback(
       (update: (current: CanvasCardTier[]) => CanvasCardTier[]) => {
         const next = update(tiersRef.current)
+        if (next === tiersRef.current) return
         mutationVersionRef.current += 1
         tiersRef.current = next
         setTiers(next)
@@ -213,29 +235,52 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
       [scheduleSave],
     )
 
+    const selectTier = useCallback(
+      (tierId: string) => {
+        navigationQueueRef.current = navigationQueueRef.current.then(async () => {
+          if (tierId === activeTierIdRef.current) return
+          try {
+            await captureActivePreview()
+          } catch (error) {
+            console.error(error)
+          }
+          if (!tiersRef.current.some((tier) => tier.id === tierId)) return
+          activeTierIdRef.current = tierId
+          setActiveTierId(tierId)
+          setTool("select")
+        })
+      },
+      [captureActivePreview],
+    )
+
     const addTier = useCallback(() => {
       const id = crypto.randomUUID()
-      updateTiers((current) => [
-        ...current,
-        {
-          ...createCanvasCardTier(current.length, {
-            width: current[0]?.width ?? 220,
-            height: current[0]?.height ?? 140,
-          }),
-          id,
-        },
-      ])
-      setActiveTierId(id)
-      window.requestAnimationFrame(() =>
-        tierSectionRefs.current
-          .get(id)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      )
-    }, [updateTiers])
+      navigationQueueRef.current = navigationQueueRef.current.then(async () => {
+        try {
+          await captureActivePreview()
+        } catch (error) {
+          console.error(error)
+        }
+        updateTiers((current) => [
+          ...current,
+          {
+            ...createCanvasCardTier(current.length, {
+              width: current[0]?.width ?? 220,
+              height: current[0]?.height ?? 140,
+            }),
+            id,
+          },
+        ])
+        activeTierIdRef.current = id
+        setActiveTierId(id)
+        setTool("select")
+      })
+    }, [captureActivePreview, updateTiers])
 
     const requestClose = useCallback(async () => {
       if (closingRef.current) return
       closingRef.current = true
+      await navigationQueueRef.current
       if (!(await flush())) {
         closingRef.current = false
         return
@@ -253,11 +298,11 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
     useImperativeHandle(ref, () => ({ requestClose }), [requestClose])
 
     const selectTool = (next: CanvasTool) => {
-      const activeCanvas = canvasRefs.current.get(activeTierId)
+      if (next === "hand") return
       if (next === "image" || next === "video") {
         setTool("select")
-        if (next === "image") activeCanvas?.insertImage()
-        else activeCanvas?.insertVideo()
+        if (next === "image") canvasRef.current?.insertImage()
+        else canvasRef.current?.insertVideo()
         return
       }
       setTool(next)
@@ -303,8 +348,68 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
         window.removeEventListener("blur", blur)
         window.removeEventListener("keydown", keydown)
         if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+        if (resizeTimerRef.current !== null)
+          window.clearTimeout(resizeTimerRef.current)
       }
     }, [enabledTools, flush, requestClose, standalone])
+
+    useEffect(() => {
+      const stage = stageRef.current
+      if (!stage) return undefined
+      const resize = () => {
+        if (resizeTimerRef.current !== null)
+          window.clearTimeout(resizeTimerRef.current)
+        resizeTimerRef.current = window.setTimeout(() => {
+          resizeTimerRef.current = null
+          const bounds = stage.getBoundingClientRect()
+          const width = Math.max(1, Math.round(bounds.width))
+          const height = Math.max(1, Math.round(bounds.height))
+          updateTiers((current) => {
+            if (
+              current.every(
+                (tier) => tier.width === width && tier.height === height,
+              )
+            )
+              return current
+            previewCacheRef.current.clear()
+            return current.map((tier) => ({
+              ...tier,
+              width,
+              height,
+              revision: tier.revision + 1,
+            }))
+          })
+        }, 160)
+      }
+      const observer = new ResizeObserver(resize)
+      observer.observe(stage)
+      resize()
+      return () => observer.disconnect()
+    }, [updateTiers])
+
+    const activeIndex = Math.max(
+      0,
+      tiers.findIndex((tier) => tier.id === activeTierId),
+    )
+    const activeTier = tiers[activeIndex] ?? tiers[0]
+    const activeState = activeTier ? stateFor(activeTier) : null
+
+    const deleteActiveTier = () => {
+      if (!activeTier || activeIndex === 0) return
+      navigationQueueRef.current = navigationQueueRef.current.then(() => {
+        const currentIndex = tiersRef.current.findIndex(
+          (tier) => tier.id === activeTier.id,
+        )
+        if (currentIndex <= 0) return
+        const next = tiersRef.current.filter((tier) => tier.id !== activeTier.id)
+        previewCacheRef.current.delete(activeTier.id)
+        updateTiers(() => next)
+        const nextActive = next[Math.min(currentIndex, next.length - 1)] ?? next[0]
+        activeTierIdRef.current = nextActive.id
+        setActiveTierId(nextActive.id)
+        setTool("select")
+      })
+    }
 
     const content = (
       <>
@@ -313,174 +418,172 @@ export const BlankCardEditorDialog = forwardRef<BlankCardEditorHandle, Props>(
             {saveError}
           </p>
         )}
-        <div className="tiered-card-editor-scroll">
-          {tiers.map((tier, index) => {
-            let initialState = initialStatesRef.current!.get(tier.id)
-            if (!initialState) {
-              initialState = stateFor(tier)
-              initialStatesRef.current!.set(tier.id, initialState)
-            }
-            return (
-              <Fragment key={tier.id}>
-                <section
-                  className="card-tier-section"
-                  data-active={tier.id === activeTierId || undefined}
-                  data-tier-index={index}
-                  ref={(element) => {
-                    if (element) tierSectionRefs.current.set(tier.id, element)
-                    else tierSectionRefs.current.delete(tier.id)
-                  }}
-                  onPointerDown={() => setActiveTierId(tier.id)}
+        {activeTier && activeState && (
+          <div className="tiered-card-editor-stage" ref={stageRef}>
+            <header className="card-tier-header">
+              <div className="card-tier-navigation">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={activeIndex === 0}
+                  aria-label="Previous tier"
+                  onClick={() => selectTier(tiers[activeIndex - 1]?.id ?? activeTier.id)}
                 >
-                  <header className="card-tier-header">
-                    {index === 0 ? (
-                      <strong>Front</strong>
-                    ) : (
-                      <input
-                        aria-label={`Tier ${index + 1} name`}
-                        value={tier.name}
-                        onChange={(event) => {
-                          const name = event.currentTarget.value
-                          updateTiers((current) =>
-                            current.map((item) =>
-                              item.id === tier.id
-                                ? { ...item, name, revision: item.revision + 1 }
-                                : item,
-                            ),
-                          )
-                        }}
-                      />
-                    )}
-                    {index > 0 && (
-                      <div className="card-tier-actions">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={index === 1}
-                          aria-label="Move tier up"
-                          onClick={() =>
-                            updateTiers((current) => {
-                              const next = [...current]
-                              ;[next[index - 1], next[index]] = [
-                                next[index],
-                                next[index - 1],
-                              ]
-                              return next
-                            })
-                          }
-                        >
-                          <ArrowUp />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={index === tiers.length - 1}
-                          aria-label="Move tier down"
-                          onClick={() =>
-                            updateTiers((current) => {
-                              const next = [...current]
-                              ;[next[index], next[index + 1]] = [
-                                next[index + 1],
-                                next[index],
-                              ]
-                              return next
-                            })
-                          }
-                        >
-                          <ArrowDown />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Delete tier"
-                          onClick={() => {
-                            canvasRefs.current.delete(tier.id)
-                            updateTiers((current) =>
-                              current.filter((item) => item.id !== tier.id),
-                            )
-                            setActiveTierId("front")
-                          }}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    )}
-                  </header>
-                  {index === 0 && tier.kind !== "canvas" && (
-                    <p className="card-tier-native-note">
-                      This Front uses its {tier.kind} editor. Added tiers use the canvas
-                      below.
-                    </p>
-                  )}
-                  <CanvasSurfaceContextMenu
-                    canvasRef={{
-                      get current() {
-                        return canvasRefs.current.get(tier.id) ?? null
-                      },
+                  <ChevronLeft />
+                </Button>
+                <select
+                  aria-label="Active tier"
+                  value={activeTier.id}
+                  onChange={(event) => selectTier(event.currentTarget.value)}
+                >
+                  {tiers.map((tier, index) => (
+                    <option key={tier.id} value={tier.id}>
+                      {index + 1}. {tier.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={activeIndex === tiers.length - 1}
+                  aria-label="Next tier"
+                  onClick={() => selectTier(tiers[activeIndex + 1]?.id ?? activeTier.id)}
+                >
+                  <ChevronRight />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Add tier"
+                  onClick={addTier}
+                >
+                  <Plus />
+                </Button>
+              </div>
+              {activeIndex > 0 && (
+                <div className="card-tier-actions">
+                  <input
+                    aria-label={`Tier ${activeIndex + 1} name`}
+                    value={activeTier.name}
+                    onChange={(event) => {
+                      const name = event.currentTarget.value
+                      updateTiers((current) =>
+                        current.map((tier) =>
+                          tier.id === activeTier.id
+                            ? { ...tier, name, revision: tier.revision + 1 }
+                            : tier,
+                        ),
+                      )
                     }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={activeIndex === 1}
+                    aria-label="Move tier up"
+                    onClick={() =>
+                      updateTiers((current) => {
+                        const index = current.findIndex(
+                          (tier) => tier.id === activeTier.id,
+                        )
+                        if (index <= 1) return current
+                        const next = [...current]
+                        ;[next[index - 1], next[index]] = [
+                          next[index],
+                          next[index - 1],
+                        ]
+                        return next
+                      })
+                    }
                   >
-                    <div className="blank-card-editor-canvas">
-                      <EndlessCanvas
-                        ref={(handle) => {
-                          if (handle) canvasRefs.current.set(tier.id, handle)
-                          else canvasRefs.current.delete(tier.id)
-                        }}
-                        tool={
-                          tier.id === activeTierId &&
-                          !(index === 0 && tier.kind !== "canvas")
-                            ? tool
-                            : "select"
-                        }
-                        initialState={initialState}
-                        options={options}
-                        style={{ width: "100%", height: "100%" }}
-                        onChange={(state) => {
-                          updateTiers((current) =>
-                            current.map((item) =>
-                              item.id === tier.id
-                                ? {
-                                    ...item,
-                                    elements: state.objects,
-                                    revision: item.revision + 1,
-                                  }
-                                : item,
-                            ),
-                          )
-                        }}
-                        onToolChangeRequest={selectTool}
-                      />
-                      {tier.id === activeTierId &&
-                        !(index === 0 && tier.kind !== "canvas") && (
-                          <CanvasToolbar
-                            tool={tool}
-                            onToolChange={selectTool}
-                            enabledTools={enabledTools}
-                            preferredTools={{ text: "markdown" }}
-                            iconOverrides={{ markdown: <MarkdownToolIcon /> }}
-                          />
-                        )}
-                    </div>
-                  </CanvasSurfaceContextMenu>
-                </section>
-                {index === 0 && (
-                  <div className="card-tier-appendage">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="add-card-tier"
-                      onClick={addTier}
-                    >
-                      <Plus /> Add tier
-                    </Button>
-                  </div>
+                    <ArrowUp />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={activeIndex === tiers.length - 1}
+                    aria-label="Move tier down"
+                    onClick={() =>
+                      updateTiers((current) => {
+                        const index = current.findIndex(
+                          (tier) => tier.id === activeTier.id,
+                        )
+                        if (index < 1 || index >= current.length - 1) return current
+                        const next = [...current]
+                        ;[next[index], next[index + 1]] = [
+                          next[index + 1],
+                          next[index],
+                        ]
+                        return next
+                      })
+                    }
+                  >
+                    <ArrowDown />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Delete tier"
+                    onClick={deleteActiveTier}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              )}
+            </header>
+            {activeIndex === 0 && activeTier.kind !== "canvas" && (
+              <p className="card-tier-native-note">
+                This Front uses its {activeTier.kind} editor. Added tiers use the canvas
+                below.
+              </p>
+            )}
+            <CanvasSurfaceContextMenu canvasRef={canvasRef}>
+              <div className="blank-card-editor-canvas">
+                <EndlessCanvas
+                  key={activeTier.id}
+                  ref={canvasRef}
+                  tool={
+                    activeIndex === 0 && activeTier.kind !== "canvas"
+                      ? "select"
+                      : tool
+                  }
+                  initialState={activeState}
+                  options={options}
+                  style={{ width: "100%", height: "100%" }}
+                  onChange={(state) => {
+                    updateTiers((current) =>
+                      current.map((tier) =>
+                        tier.id === activeTier.id
+                          ? {
+                              ...tier,
+                              elements: state.objects,
+                              revision: tier.revision + 1,
+                            }
+                          : tier,
+                      ),
+                    )
+                  }}
+                  onToolChangeRequest={selectTool}
+                />
+                {!(activeIndex === 0 && activeTier.kind !== "canvas") && (
+                  <CanvasToolbar
+                    tool={tool}
+                    onToolChange={selectTool}
+                    enabledTools={enabledTools}
+                    preferredTools={{ text: "markdown" }}
+                    iconOverrides={{ markdown: <MarkdownToolIcon /> }}
+                  />
                 )}
-              </Fragment>
-            )
-          })}
-        </div>
+              </div>
+            </CanvasSurfaceContextMenu>
+          </div>
+        )}
       </>
     )
 

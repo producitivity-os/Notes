@@ -1,0 +1,19 @@
+{
+	"name": "xcode build server",
+	"version": "1.3.0",
+	"bspVersion": "2.2.0",
+	"languages": [
+		"c",
+		"cpp",
+		"objective-c",
+		"objective-cpp",
+		"swift"
+	],
+	"argv": [
+		"/opt/homebrew/bin/xcode-build-server"
+	],
+	"workspace": "/Users/mustafayousif/Code/productivity-os/apps/desktop/Notes/Notes.xcodeproj/project.xcworkspace",
+	"build_root": "/Users/mustafayousif/Library/Developer/Xcode/DerivedData/Notes-acqeyqffmqdpsjctjradrgftgnoe",
+	"scheme": "Notes",
+	"kind": "xcode"
+}
