@@ -127,15 +127,13 @@ final class NotebookDocument: ReferenceFileDocument, ObservableObject, @unchecke
     }
 
     @discardableResult
-    func updateCanvas(pageID: String, expectedRevision: Int, canvas: JSONValue) -> Int? {
+    func updateScene(pageID: String, scene: CanvasSceneDocument) -> Int? {
         guard let index = package.manifest.pages.firstIndex(where: { $0.id == pageID }),
-              var payload = package.pagePayloads[pageID],
-              payload.revision == expectedRevision,
-              package.manifest.pages[index].revision == expectedRevision else { return nil }
+              var payload = package.pagePayloads[pageID] else { return nil }
         payload.revision += 1
-        payload.canvas = canvas
+        payload.scene = scene
         package.pagePayloads[pageID] = payload
-        package.manifest.requiredPlugins = Self.pluginRequirements(in: package.pagePayloads.values.map(\.canvas))
+        package.manifest.requiredPlugins = []
         package.manifest.pages[index].revision = payload.revision
         package.manifest.pages[index].updatedAt = Date()
         package.manifest.updatedAt = Date()
@@ -153,14 +151,14 @@ final class NotebookDocument: ReferenceFileDocument, ObservableObject, @unchecke
         objectWillChange.send()
     }
 
-    func storeCardTierPreviews(pageID: String, cardID: String, previews: [(tierID: String, revision: Int, data: Data)]) {
+    func storeCardPreviews(pageID: String, cardID: String, previews: [(side: String, revision: Int, data: Data)]) {
         guard page(id: pageID) != nil else { return }
         let card = Self.safePreviewComponent(cardID)
         for preview in previews {
-            let tier = Self.safePreviewComponent(preview.tierID)
-            let prefix = "cards/\(card)/\(tier)-"
+            let side = Self.safePreviewComponent(preview.side)
+            let prefix = "cards/\(card)/\(side)-"
             package.previews = package.previews.filter { !$0.key.hasPrefix(prefix) }
-            package.previews["\(prefix)\(preview.revision).jpg"] = preview.data
+            package.previews["\(prefix)\(preview.revision).png"] = preview.data
         }
         package.manifest.updatedAt = Date()
         objectWillChange.send()
@@ -197,6 +195,11 @@ final class NotebookDocument: ReferenceFileDocument, ObservableObject, @unchecke
         package.previews["pages/\(pageID).png"]
     }
 
+    func assetData(for hash: String) -> Data? {
+        guard let metadata = package.manifest.assets.first(where: { $0.hash == hash }) else { return nil }
+        return package.assets[metadata.filename]
+    }
+
     private func refreshCoverPreview() {
         if let preview = package.previews["pages/\(package.manifest.coverPageID).png"] {
             package.previews["cover.png"] = preview
@@ -220,28 +223,4 @@ final class NotebookDocument: ReferenceFileDocument, ObservableObject, @unchecke
         value.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
     }
 
-    private static func pluginRequirements(in values: [JSONValue]) -> [NotebookPluginRequirement] {
-        var requirements: [String: String] = [:]
-        func collect(_ value: JSONValue) {
-            switch value {
-            case let .object(fields):
-                let identifier = fields["pluginId"]?.stringValue ?? fields["pluginID"]?.stringValue
-                if let identifier {
-                    let version = fields["pluginVersion"]?.stringValue
-                        ?? fields["pluginVersion"]?.numberValue.map { String(Int($0)) }
-                        ?? "1"
-                    requirements[identifier] = version
-                }
-                fields.values.forEach(collect)
-            case let .array(items):
-                items.forEach(collect)
-            default:
-                break
-            }
-        }
-        values.forEach(collect)
-        return requirements.keys.sorted().map {
-            NotebookPluginRequirement(identifier: $0, version: requirements[$0] ?? "1")
-        }
-    }
 }

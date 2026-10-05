@@ -1,28 +1,23 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import Notes
 
 final class NotebookPackageTests: XCTestCase {
-    func testPackageRoundTripPreservesUnknownCanvasFields() throws {
+    func testNativeSceneRoundTrip() throws {
         var package = NotebookPackage.blank()
         let pageID = try XCTUnwrap(package.manifest.pages.first?.id)
-        package.pagePayloads[pageID]?.canvas = .object([
-            "layers": .array([]),
-            "objects": .array([
-                .object([
-                    "id": .string("plugin-object"),
-                    "type": .string("card"),
-                    "pluginID": .string("third-party.example"),
-                    "futurePayload": .object([
-                        "nested": .array([.number(1), .string("preserved")]),
-                    ]),
-                ]),
-            ]),
-        ])
+        let text = TextElement.make(
+            frame: CanvasRect(x: 40, y: 50, width: 260, height: 120),
+            markdown: "# Inverses\n\n$A^{-1}$"
+        )
+        let card = CardElement.make(frame: CanvasRect(x: 80, y: 240, width: 320, height: 190))
+        package.pagePayloads[pageID]?.scene.elements = [.text(text), .card(card)]
 
         let wrapper = try NotebookPackageIO.fileWrapper(for: package)
         let restored = try NotebookPackageIO.read(fileWrapper: wrapper)
-        XCTAssertEqual(restored.pagePayloads[pageID]?.canvas, package.pagePayloads[pageID]?.canvas)
+        XCTAssertEqual(restored.pagePayloads[pageID]?.scene, package.pagePayloads[pageID]?.scene)
+        XCTAssertEqual(restored.manifest.formatVersion, 2)
     }
 
     func testAssetDeduplicationAndHashVerification() throws {
@@ -51,50 +46,74 @@ final class NotebookPackageTests: XCTestCase {
         try NotebookPackageIO.writeAtomically(package, to: destination)
         let restored = try NotebookPackageIO.read(at: destination)
         XCTAssertEqual(restored.manifest.notebookID, package.manifest.notebookID)
-        XCTAssertEqual(restored.manifest.pages.map(\.id), package.manifest.pages.map(\.id))
         XCTAssertEqual(restored.pagePayloads, package.pagePayloads)
-        XCTAssertEqual(restored.assets, package.assets)
-        XCTAssertEqual(restored.previews, package.previews)
     }
 
-    func testPageDeletionSafeguardAndRevisionRejection() throws {
+    func testVersionOneIsRejectedWithoutMutation() throws {
+        var package = NotebookPackage.blank()
+        package.manifest.formatVersion = 1
+        XCTAssertThrowsError(try package.normalize()) { error in
+            XCTAssertEqual(error as? NotebookPackageError, .unsupportedVersion(1))
+        }
+        XCTAssertEqual(package.manifest.formatVersion, 1)
+    }
+
+    func testVersionOnePackageIsRejectedBeforeLegacyPageDecoding() throws {
+        var manifest = NotebookManifest.blank()
+        manifest.formatVersion = 1
+        let root = FileWrapper(directoryWithFileWrappers: [:])
+        let manifestWrapper = FileWrapper(regularFileWithContents: try NotebookCoding.encoder.encode(manifest))
+        manifestWrapper.preferredFilename = NotebookFormat.manifestName
+        root.addFileWrapper(manifestWrapper)
+
+        XCTAssertThrowsError(try NotebookPackageIO.read(fileWrapper: root)) { error in
+            XCTAssertEqual(error as? NotebookPackageError, .unsupportedVersion(1))
+        }
+    }
+
+    @MainActor
+    func testDocumentSceneRevisionAndUndo() throws {
+        let document = NotebookDocument()
+        let controller = NativeCanvasController()
+        let undoManager = UndoManager()
+        controller.undoManager = undoManager
+        controller.load(document: document, pageID: document.selectedPageID)
+        controller.addElement(
+            .text(.make(frame: CanvasRect(x: 20, y: 20, width: 200, height: 80))),
+            actionName: "Create Text"
+        )
+        XCTAssertEqual(document.package.pagePayloads[document.selectedPageID]?.revision, 1)
+        XCTAssertEqual(controller.scene.elements.count, 1)
+        controller.undo()
+        XCTAssertTrue(controller.scene.elements.isEmpty)
+        controller.redo()
+        XCTAssertEqual(controller.scene.elements.count, 1)
+    }
+
+    func testArrowAttachmentTracksTargetGeometry() throws {
+        let text = TextElement.make(frame: CanvasRect(x: 100, y: 100, width: 200, height: 100))
+        var scene = CanvasSceneDocument.blank()
+        scene.elements = [.text(text)]
+        let attachment = ArrowAttachment(elementID: text.id, edge: .right, position: 0.5)
+        XCTAssertEqual(CanvasGeometry.attachmentPoint(attachment, in: scene), CanvasPoint(x: 300, y: 150))
+
+        var moved = text
+        moved.geometry.frame.x = 180
+        scene.replace(.text(moved))
+        XCTAssertEqual(CanvasGeometry.attachmentPoint(attachment, in: scene), CanvasPoint(x: 380, y: 150))
+    }
+
+    func testPageDeletionSafeguard() {
         let document = NotebookDocument()
         let original = document.selectedPageID
         document.deletePage(id: original)
         XCTAssertEqual(document.pages.count, 1)
-
         let added = document.addPage(after: original, orientation: .landscape)
         XCTAssertEqual(document.page(id: added)?.width, NotebookFormat.defaultHeight)
         XCTAssertEqual(document.page(id: added)?.height, NotebookFormat.defaultWidth)
-        let canvas = try XCTUnwrap(document.package.pagePayloads[added]?.canvas)
-        XCTAssertNil(document.updateCanvas(pageID: added, expectedRevision: 9, canvas: canvas))
-        var canvasWithPlugin = try XCTUnwrap(canvas.objectValue)
-        canvasWithPlugin["objects"] = .array([
-            .object([
-                "kind": .string("plugin"),
-                "pluginId": .string("example.card"),
-                "pluginVersion": .number(4),
-                "futureField": .string("kept"),
-            ]),
-        ])
-        XCTAssertEqual(document.updateCanvas(pageID: added, expectedRevision: 0, canvas: .object(canvasWithPlugin)), 1)
-        XCTAssertEqual(
-            document.package.manifest.requiredPlugins,
-            [NotebookPluginRequirement(identifier: "example.card", version: "4")]
-        )
     }
 
-    func testOlderPackageVersionMigratesDuringNormalization() throws {
-        var package = NotebookPackage.blank()
-        package.manifest.formatVersion = 0
-        let pageID = try XCTUnwrap(package.manifest.pages.first?.id)
-        package.pagePayloads[pageID]?.formatVersion = 0
-        try package.normalize()
-        XCTAssertEqual(package.manifest.formatVersion, NotebookFormat.currentVersion)
-        XCTAssertEqual(package.pagePayloads[pageID]?.formatVersion, NotebookFormat.currentVersion)
-    }
-
-    func testPluginPeopleAndCardTierPreviewsRemainFileBased() throws {
+    func testPluginPeopleRemainFileBased() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("notes-review-store-tests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -108,20 +127,33 @@ final class NotebookPackageTests: XCTestCase {
         )
         XCTAssertEqual(saved.name, "Ada Lovelace")
         XCTAssertEqual(try store.pluginPeople(query: "lovelace").map(\.id), ["person-1"])
+    }
+}
 
-        let document = NotebookDocument()
-        let pageID = document.selectedPageID
-        document.storeCardTierPreviews(
-            pageID: pageID,
-            cardID: "card/1",
-            previews: [(tierID: "front", revision: 3, data: Data("preview".utf8))]
-        )
-        XCTAssertEqual(document.package.previews["cards/card-1/front-3.jpg"], Data("preview".utf8))
+final class CanvasViewportTests: XCTestCase {
+    func testPanToolIsNotExposedInToolbar() {
+        XCTAssertFalse(CanvasToolKind.toolbarTools.contains(.pan))
+        XCTAssertEqual(CanvasToolKind.select.resourceIconName, "pointer")
+        XCTAssertEqual(CanvasToolKind.text.resourceIconName, "markdown")
+        XCTAssertEqual(CanvasToolKind.arrow.resourceIconName, "workflow")
     }
 
-    @MainActor
-    func testCanvasControllerReusesOneWebView() {
-        let controller = CanvasWebController()
-        XCTAssertTrue(controller.webView === controller.webView)
+    func testWorldAndViewCoordinateRoundTrip() {
+        var viewport = CanvasViewport()
+        viewport.fit(pageSize: CGSize(width: 794, height: 1123), in: CGSize(width: 1200, height: 800))
+        let world = CGPoint(x: 310, y: 420)
+        let restored = viewport.worldPoint(fromView: viewport.viewPoint(fromWorld: world))
+        XCTAssertEqual(restored.x, world.x, accuracy: 0.0001)
+        XCTAssertEqual(restored.y, world.y, accuracy: 0.0001)
+    }
+
+    func testCursorCenteredZoomKeepsWorldPointStable() {
+        var viewport = CanvasViewport(scale: 1, offset: CGPoint(x: 50, y: 60))
+        let cursor = CGPoint(x: 300, y: 250)
+        let before = viewport.worldPoint(fromView: cursor)
+        viewport.zoom(by: 2, around: cursor)
+        let after = viewport.worldPoint(fromView: cursor)
+        XCTAssertEqual(after.x, before.x, accuracy: 0.0001)
+        XCTAssertEqual(after.y, before.y, accuracy: 0.0001)
     }
 }

@@ -4,10 +4,9 @@ import SwiftUI
 struct NotebookWorkspace: View {
     @ObservedObject var document: NotebookDocument
     let fileURL: URL?
-    @StateObject private var canvasController = CanvasWebController()
+    @StateObject private var canvasController = NativeCanvasController()
     @State private var renamedPageID: String?
     @State private var renameText = ""
-    @State private var errorMessage: String?
     @AppStorage("newPageOrientation") private var newPageOrientation = NotebookPageOrientation.portrait.rawValue
 
     var body: some View {
@@ -15,26 +14,30 @@ struct NotebookWorkspace: View {
             pageSidebar
                 .navigationSplitViewColumnWidth(min: 190, ideal: 225, max: 300)
         } detail: {
-            CanvasWebView(document: document, controller: canvasController)
-                .ignoresSafeArea(.container, edges: .bottom)
+            ZStack(alignment: .top) {
+                NativeCanvasHost(controller: canvasController)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                CanvasToolbarView(controller: canvasController)
+                    .padding(.top, 12)
+            }
+            .ignoresSafeArea(.container, edges: .bottom)
         }
-        .navigationTitle(fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled Notebook")
-        .onAppear { applyPendingNavigation() }
+        .navigationTitle("")
+        .onAppear {
+            canvasController.load(document: document, pageID: document.selectedPageID)
+            applyPendingNavigation()
+        }
         .onOpenURL { NotesNavigationCoordinator.shared.handle($0) }
         .onReceive(NotificationCenter.default.publisher(for: .notebookNavigationAvailable)) { _ in
             applyPendingNavigation()
         }
-        .onDisappear { canvasController.flush() }
-        .onReceive(NotificationCenter.default.publisher(for: .notebookCanvasError)) { notification in
-            errorMessage = notification.object as? String
-        }
-        .alert("Canvas Error", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK") { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "")
+        .sheet(item: Binding(
+            get: { canvasController.cardEditorRequest },
+            set: { canvasController.cardEditorRequest = $0 }
+        )) { request in
+            CardEditorSheet(card: request.card, sourceController: canvasController) { card in
+                canvasController.saveEditedCard(card)
+            }
         }
         .alert("Rename Page", isPresented: Binding(
             get: { renamedPageID != nil },
@@ -51,7 +54,13 @@ struct NotebookWorkspace: View {
 
     private func applyPendingNavigation() {
         guard let request = NotesNavigationCoordinator.shared.take(for: document.package.manifest.notebookID) else { return }
-        canvasController.navigate(pageID: request.pageID, objectID: request.objectID)
+        if let pageID = request.pageID, document.page(id: pageID) != nil {
+            document.selectedPageID = pageID
+            canvasController.load(document: document, pageID: pageID)
+        }
+        if canvasController.scene.element(id: request.objectID) != nil {
+            canvasController.selection.selectOnly(request.objectID)
+        }
     }
 
     private var pageSidebar: some View {
@@ -94,7 +103,7 @@ struct NotebookWorkspace: View {
     private func addPage() {
         let orientation = NotebookPageOrientation(rawValue: newPageOrientation) ?? .portrait
         document.addPage(after: document.selectedPageID, orientation: orientation)
-        canvasController.refreshCurrentPage()
+        canvasController.load(document: document, pageID: document.selectedPageID)
     }
 
     private var selection: Binding<String?> {
@@ -102,7 +111,8 @@ struct NotebookWorkspace: View {
             get: { document.selectedPageID },
             set: { value in
                 guard let value else { return }
-                canvasController.selectPage(value)
+                document.selectedPageID = value
+                canvasController.load(document: document, pageID: value)
             }
         )
     }
@@ -115,16 +125,16 @@ struct NotebookWorkspace: View {
         }
         Button("Duplicate", systemImage: "plus.square.on.square") {
             document.duplicatePage(id: page.id)
-            canvasController.refreshCurrentPage()
+            canvasController.load(document: document, pageID: document.selectedPageID)
         }
         Menu("Orientation", systemImage: "rectangle.portrait.rotate") {
             Button("Portrait") {
                 document.setOrientation(.portrait, for: page.id)
-                canvasController.refreshCurrentPage()
+                if document.selectedPageID == page.id { canvasController.load(document: document, pageID: page.id) }
             }
             Button("Landscape") {
                 document.setOrientation(.landscape, for: page.id)
-                canvasController.refreshCurrentPage()
+                if document.selectedPageID == page.id { canvasController.load(document: document, pageID: page.id) }
             }
         }
         Button("Set as Cover", systemImage: "book.closed") { document.setCoverPage(id: page.id) }
@@ -132,7 +142,7 @@ struct NotebookWorkspace: View {
         Divider()
         Button("Delete", systemImage: "trash", role: .destructive) {
             document.deletePage(id: page.id)
-            canvasController.refreshCurrentPage()
+            canvasController.load(document: document, pageID: document.selectedPageID)
         }
         .disabled(document.pages.count == 1)
     }

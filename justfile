@@ -3,9 +3,6 @@ set shell := ["zsh", "-cu"]
 default:
     @just --list
 
-canvas:
-    yarn build:native-canvas
-
 generate:
     xcodegen generate
 
@@ -24,8 +21,8 @@ release:
 test:
     zsh Native/Tools/native-build.sh Debug test
 
-export-notebooks:
-    bash export-notebooks.sh
-
 build-server:
    xcode-build-server config -project Notes.xcodeproj -scheme Notes
+
+update-icon picture:
+    zsh Native/Tools/update-app-icon.sh "{{picture}}"

@@ -6,8 +6,7 @@ extension UTType {
 }
 
 enum NotebookFormat {
-    static let currentVersion = 1
-    static let bridgeVersion = 1
+    static let currentVersion = 2
     static let manifestName = "manifest.json"
     static let pagesDirectory = "pages"
     static let assetsDirectory = "assets"
@@ -159,34 +158,14 @@ struct NotebookPagePayload: Codable, Equatable, Sendable {
     var formatVersion: Int
     var pageID: String
     var revision: Int
-    var canvas: JSONValue
+    var scene: CanvasSceneDocument
 
     static func blank(pageID: String) -> Self {
         .init(
             formatVersion: NotebookFormat.currentVersion,
             pageID: pageID,
             revision: 0,
-            canvas: .object([
-                "layers": .array([
-                    .object([
-                        "id": .string("main"),
-                        "name": .string("Main"),
-                        "zIndex": .number(0),
-                        "visible": .bool(true),
-                        "opacity": .number(1),
-                        "interactionColor": .number(3_899_126),
-                    ]),
-                ]),
-                "activeLayerId": .string("main"),
-                "focusedLayerId": .null,
-                "unfocusedLayerOpacity": .number(0.25),
-                "viewport": .object([
-                    "x": .number(0),
-                    "y": .number(0),
-                    "scale": .number(1),
-                ]),
-                "objects": .array([]),
-            ])
+            scene: .blank()
         )
     }
 }
@@ -209,11 +188,8 @@ struct NotebookPackage: Equatable, Sendable {
     }
 
     mutating func normalize() throws {
-        guard manifest.formatVersion <= NotebookFormat.currentVersion else {
+        guard manifest.formatVersion == NotebookFormat.currentVersion else {
             throw NotebookPackageError.unsupportedVersion(manifest.formatVersion)
-        }
-        if manifest.formatVersion < NotebookFormat.currentVersion {
-            manifest.formatVersion = NotebookFormat.currentVersion
         }
         guard !manifest.pages.isEmpty else { throw NotebookPackageError.missingPages }
 
@@ -225,12 +201,14 @@ struct NotebookPackage: Equatable, Sendable {
             if pagePayloads[page.id] == nil {
                 pagePayloads[page.id] = .blank(pageID: page.id)
             }
-            if var payload = pagePayloads[page.id] {
+            if let payload = pagePayloads[page.id] {
                 guard payload.pageID == page.id else { throw NotebookPackageError.invalidPackage }
-                guard payload.formatVersion <= NotebookFormat.currentVersion else {
+                guard payload.formatVersion == NotebookFormat.currentVersion else {
                     throw NotebookPackageError.unsupportedVersion(payload.formatVersion)
                 }
-                payload.formatVersion = NotebookFormat.currentVersion
+                guard payload.scene.schemaVersion == CanvasSceneDocument.currentVersion else {
+                    throw NotebookPackageError.unsupportedSceneVersion(payload.scene.schemaVersion)
+                }
                 pagePayloads[page.id] = payload
             }
         }
@@ -248,6 +226,7 @@ enum NotebookPackageError: LocalizedError, Equatable {
     case missingPage(String)
     case duplicatePage(String)
     case unsupportedVersion(Int)
+    case unsupportedSceneVersion(Int)
     case invalidAssetHash(String)
 
     var errorDescription: String? {
@@ -257,7 +236,8 @@ enum NotebookPackageError: LocalizedError, Equatable {
         case .missingPages: "A notebook must contain at least one page."
         case let .missingPage(id): "Page \(id) is missing."
         case let .duplicatePage(id): "The notebook contains duplicate page \(id)."
-        case let .unsupportedVersion(version): "Notebook format \(version) is newer than this version of Notes supports."
+        case let .unsupportedVersion(version): "Notebook format \(version) is not supported by this native version of Notes."
+        case let .unsupportedSceneVersion(version): "Canvas scene format \(version) is not supported."
         case let .invalidAssetHash(hash): "The embedded asset \(hash) is corrupt."
         }
     }

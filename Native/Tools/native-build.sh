@@ -20,7 +20,6 @@ case "$configuration" in
 esac
 
 cd "$notes_directory"
-yarn build:native-canvas
 xcodegen generate
 xcodebuild \
   -quiet \
@@ -29,5 +28,5 @@ xcodebuild \
   -configuration "$configuration" \
   -derivedDataPath "$derived_data" \
   CODE_SIGNING_ALLOWED=NO \
+  clean \
   "$action"
-

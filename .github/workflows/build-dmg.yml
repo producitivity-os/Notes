@@ -23,38 +23,24 @@ jobs:
         with:
           submodules: recursive
           token: ${{ secrets.SUBMODULES_TOKEN }}
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Install Rust targets
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
-      - name: Install dependencies
-        run: yarn install --immutable
+      - name: Install native build tools
+        run: brew install xcodegen just
       - name: Validate Notes
         run: |
-          yarn workspace notes build
-          cargo check -p notes
+          just test
+          just release
       - name: Build unsigned universal DMG
         if: inputs.package_dmg
-        run: yarn workspace notes tauri build --bundles dmg --target universal-apple-darwin --no-sign --ci
-      - name: Normalize DMG filename
-        if: inputs.package_dmg
-        shell: bash
         run: |
           mkdir -p release
-          dmg_path="$(find target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' -print -quit)"
-          test -n "$dmg_path"
-          cp "$dmg_path" release/Notes-macOS-universal.dmg
+          mkdir -p release/dmg-root
+          cp -R .build/xcode-release/Build/Products/Release/Notes.app release/dmg-root/
+          hdiutil create -volname Notes -srcfolder release/dmg-root -ov -format UDZO release/Notes-macOS.dmg
       - name: Upload Notes DMG
         if: inputs.package_dmg
         uses: actions/upload-artifact@v4
         with:
-          name: Notes-macOS-universal
-          path: release/Notes-macOS-universal.dmg
+          name: Notes-macOS
+          path: release/Notes-macOS.dmg
           if-no-files-found: error
           retention-days: 14

@@ -17,6 +17,9 @@ enum NotebookPackageIO {
         }
 
         let manifest = try NotebookCoding.decoder.decode(NotebookManifest.self, from: manifestData)
+        guard manifest.formatVersion == NotebookFormat.currentVersion else {
+            throw NotebookPackageError.unsupportedVersion(manifest.formatVersion)
+        }
         guard let pageFiles = root[NotebookFormat.pagesDirectory]?.fileWrappers else {
             throw NotebookPackageError.missingPages
         }
