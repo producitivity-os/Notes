@@ -6,31 +6,31 @@
     {
       "layers" : [
         {
-          "blend-mode" : "soft-light",
+          "blend-mode" : "multiply",
           "fill" : {
             "linear-gradient" : [
-              "display-p3:0.97352,0.99027,0.67618,1.00000",
-              "display-p3:1.00000,0.75740,0.46761,1.00000"
+              "srgb:1.00000,0.83235,0.47321,1.00000",
+              "srgb:1.00000,0.57811,0.00000,1.00000"
             ],
             "orientation" : {
               "start" : {
-                "x" : 0.5,
-                "y" : 1
+                "x" : 1,
+                "y" : 0
               },
               "stop" : {
-                "x" : 0.5,
-                "y" : 0
+                "x" : -0.36537520831251574,
+                "y" : 1.7900265877337675
               }
             }
           },
           "image-name" : "pen-f-svgrepo-com.svg",
           "name" : "pen-f-svgrepo-com",
-          "opacity" : 1,
+          "opacity" : 0.75,
           "position" : {
             "scale" : 0.7,
             "translation-in-points" : [
-              64,
-              19
+              154,
+              -100
             ]
           }
         },
@@ -38,16 +38,35 @@
           "fill" : {
             "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
           },
-          "image-name" : "notebook-of-black-cover-svgrepo-com.svg",
-          "name" : "notebook-of-black-cover-svgrepo-com",
-          "opacity" : 0.6,
-          "position" : {
-            "scale" : 0.8,
-            "translation-in-points" : [
-              -6,
-              9.001164394278476
-            ]
-          }
+          "hidden" : true,
+          "image-name" : "book-half-svgrepo-com.svg",
+          "name" : "book-half-svgrepo-com",
+          "opacity" : 0.8
+        },
+        {
+          "fill" : {
+            "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+          },
+          "hidden" : true,
+          "image-name" : "book-fill-svgrepo-com-2.svg",
+          "name" : "book-fill-svgrepo-com-2"
+        },
+        {
+          "fill" : {
+            "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+          },
+          "hidden" : true,
+          "image-name" : "book-svgrepo-com-2.svg",
+          "name" : "book-svgrepo-com-2"
+        },
+        {
+          "fill" : {
+            "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+          },
+          "hidden" : false,
+          "image-name" : "book-open-alt-svgrepo-com.svg",
+          "name" : "book-open-alt-svgrepo-com",
+          "opacity" : 0.75
         }
       ],
       "shadow" : {
