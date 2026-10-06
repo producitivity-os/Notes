@@ -7,6 +7,7 @@ final class SelectTool: CanvasTool {
         case resize(id: String, start: CanvasPoint, original: CanvasSceneDocument)
         case rotate(id: String, original: CanvasSceneDocument)
         case endpoint(id: String, isStart: Bool, original: CanvasSceneDocument)
+        case curve(id: String, original: CanvasSceneDocument)
         case marquee(start: CanvasPoint)
     }
 
@@ -16,6 +17,10 @@ final class SelectTool: CanvasTool {
         let shift = event.modifierFlags.contains(.shift)
         if let endpoint = context.view.arrowEndpoint(at: point) {
             mode = .endpoint(id: endpoint.id, isStart: endpoint.isStart, original: context.scene)
+            return
+        }
+        if let id = context.view.arrowCurveHandle(at: point) {
+            mode = .curve(id: id, original: context.scene)
             return
         }
         if let id = context.view.rotationHandle(at: point) {
@@ -61,6 +66,7 @@ final class SelectTool: CanvasTool {
             )
         case let .rotate(id, original): rotate(id: id, to: point, original: original, context: context)
         case let .endpoint(id, isStart, original): moveEndpoint(id: id, isStart: isStart, to: point, original: original, context: context)
+        case let .curve(id, original): curve(id: id, to: point, original: original, context: context)
         case let .marquee(start): marquee(from: start, to: point, context: context)
         }
         context.redraw()
@@ -78,6 +84,7 @@ final class SelectTool: CanvasTool {
             original = value
             actionName = "Move Arrow Endpoint"
             bindEndpoint(id: id, isStart: isStart, at: point, context: context)
+        case let .curve(_, value): original = value; actionName = "Curve Arrow"
         case .marquee:
             original = nil
             actionName = "Select"
@@ -92,7 +99,8 @@ final class SelectTool: CanvasTool {
 
     func cancel(context: CanvasInteractionContext) {
         switch mode {
-        case let .move(_, original), let .resize(_, _, original), let .rotate(_, original), let .endpoint(_, _, original):
+        case let .move(_, original), let .resize(_, _, original), let .rotate(_, original),
+             let .endpoint(_, _, original), let .curve(_, original):
             context.controller.preview(original)
         default: break
         }
@@ -112,6 +120,11 @@ final class SelectTool: CanvasTool {
                 arrow.start.point.y += dy
                 arrow.end.point.x += dx
                 arrow.end.point.y += dy
+                if var bendPoint = arrow.bendPoint {
+                    bendPoint.x += dx
+                    bendPoint.y += dy
+                    arrow.bendPoint = bendPoint
+                }
                 arrow.start.attachment = nil
                 arrow.end.attachment = nil
                 arrow.refreshBounds()
@@ -176,6 +189,16 @@ final class SelectTool: CanvasTool {
     private func moveEndpoint(id: String, isStart: Bool, to point: CanvasPoint, original: CanvasSceneDocument, context: CanvasInteractionContext) {
         guard case var .arrow(arrow)? = original.element(id: id) else { return }
         if isStart { arrow.start = ArrowEndpoint(point: point) } else { arrow.end = ArrowEndpoint(point: point) }
+        arrow.refreshBounds()
+        var updated = original
+        updated.replace(.arrow(arrow))
+        context.controller.preview(updated)
+    }
+
+    private func curve(id: String, to point: CanvasPoint, original: CanvasSceneDocument, context: CanvasInteractionContext) {
+        guard case var .arrow(arrow)? = original.element(id: id) else { return }
+        arrow.routing = .curved
+        arrow.bendPoint = point
         arrow.refreshBounds()
         var updated = original
         updated.replace(.arrow(arrow))

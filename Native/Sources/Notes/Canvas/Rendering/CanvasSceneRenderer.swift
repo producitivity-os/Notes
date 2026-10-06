@@ -37,9 +37,15 @@ final class CanvasSceneRenderer {
         point: CanvasPoint,
         assetData: @escaping (String) -> Data?
     ) -> CanvasElementRecord? {
-        guard let graphics = NSGraphicsContext.current?.cgContext else {
-            return scene.elements.reversed().first { $0.geometry.frame.contains(point) }
-        }
+        guard let graphics = NSGraphicsContext.current?.cgContext ?? CGContext(
+            data: nil,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
         let context = CanvasDrawingContext(
             graphics: graphics,
             scene: scene,
@@ -48,6 +54,7 @@ final class CanvasSceneRenderer {
             drawScene: { _, _, _, _ in },
             depth: 0
         )
-        return scene.elements.reversed().first { registry.hitTest($0, point: point, context: context) }
+        let frontToBack = Array(scene.elements.reversed())
+        return frontToBack.first { registry.hitTest($0, point: point, context: context) }
     }
 }

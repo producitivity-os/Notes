@@ -9,65 +9,71 @@ final class ArrowElementRenderer: CanvasElementRenderer {
 
     func draw(_ element: CanvasElementRecord, context: CanvasDrawingContext) {
         guard case let .arrow(arrow) = element else { return }
-        let start = resolved(arrow.start, in: context.scene).cgPoint
-        let end = resolved(arrow.end, in: context.scene).cgPoint
-        let path = path(for: arrow.routing, start: start, end: end)
+        let start = ArrowPathGeometry.resolved(arrow.start, in: context.scene)
+        let end = ArrowPathGeometry.resolved(arrow.end, in: context.scene)
+        let bendPoint = ArrowPathGeometry.bendPoint(for: arrow, in: context.scene)
+        let previous = ArrowPathGeometry.pointBeforeEnd(
+            routing: arrow.routing,
+            start: start,
+            end: end,
+            bendPoint: bendPoint
+        )
+        let headSize = max(8, arrow.lineWidth * 4)
+        let shaftEnd = shaftEnd(for: arrow.head, tip: end, previous: previous, headSize: headSize)
+        let path = ArrowPathGeometry.path(
+            routing: arrow.routing,
+            start: start,
+            end: shaftEnd,
+            bendPoint: bendPoint
+        )
         let graphics = context.graphics
-        graphics.setStrokeColor(NSColor(canvasColor: arrow.color).cgColor)
+        let color = arrow.color == .text ? CanvasColor.accent : arrow.color
+        graphics.setStrokeColor(NSColor(canvasColor: color).cgColor)
         graphics.setLineWidth(arrow.lineWidth)
-        graphics.setLineCap(.round)
+        graphics.setLineCap(.butt)
         graphics.setLineJoin(.round)
         graphics.addPath(path)
         graphics.strokePath()
-        drawHead(arrow.head, at: end, from: pointBeforeEnd(for: arrow.routing, start: start, end: end), arrow: arrow, graphics: graphics)
+        drawHead(arrow.head, at: end, from: previous, size: headSize, color: color, graphics: graphics)
     }
 
     func hitTest(_ element: CanvasElementRecord, point: CanvasPoint, context: CanvasDrawingContext) -> Bool {
         guard case let .arrow(arrow) = element else { return false }
-        let start = resolved(arrow.start, in: context.scene).cgPoint
-        let end = resolved(arrow.end, in: context.scene).cgPoint
-        return distance(from: point.cgPoint, toSegmentFrom: start, to: end) <= max(6, arrow.lineWidth + 4)
-    }
-
-    private func resolved(_ endpoint: ArrowEndpoint, in scene: CanvasSceneDocument) -> CanvasPoint {
-        endpoint.attachment.flatMap { CanvasGeometry.attachmentPoint($0, in: scene) } ?? endpoint.point
-    }
-
-    private func path(for style: ArrowRoutingStyle, start: CGPoint, end: CGPoint) -> CGPath {
-        let path = CGMutablePath()
-        path.move(to: start)
-        switch style {
-        case .straight:
-            path.addLine(to: end)
-        case .curved:
-            let distance = hypot(end.x - start.x, end.y - start.y)
-            let bend = min(120, distance * 0.35)
-            path.addCurve(
-                to: end,
-                control1: CGPoint(x: start.x + bend, y: start.y),
-                control2: CGPoint(x: end.x - bend, y: end.y)
-            )
-        case .orthogonal:
-            let middleX = (start.x + end.x) / 2
-            path.addLine(to: CGPoint(x: middleX, y: start.y))
-            path.addLine(to: CGPoint(x: middleX, y: end.y))
-            path.addLine(to: end)
-        }
-        return path
-    }
-
-    private func pointBeforeEnd(for style: ArrowRoutingStyle, start: CGPoint, end: CGPoint) -> CGPoint {
-        switch style {
-        case .straight: start
-        case .curved: CGPoint(x: end.x - min(120, hypot(end.x - start.x, end.y - start.y) * 0.35), y: end.y)
-        case .orthogonal: CGPoint(x: (start.x + end.x) / 2, y: end.y)
+        let points = ArrowPathGeometry.sampledPoints(for: arrow, in: context.scene)
+        let threshold = max(7, arrow.lineWidth + 5)
+        return zip(points, points.dropFirst()).contains { start, end in
+            distance(from: point.cgPoint, toSegmentFrom: start, to: end) <= threshold
         }
     }
 
-    private func drawHead(_ style: ArrowHeadStyle, at end: CGPoint, from previous: CGPoint, arrow: ArrowElement, graphics: CGContext) {
+    private func shaftEnd(
+        for style: ArrowHeadStyle,
+        tip: CGPoint,
+        previous: CGPoint,
+        headSize: CGFloat
+    ) -> CGPoint {
+        guard style == .triangle else { return tip }
+        let dx = tip.x - previous.x
+        let dy = tip.y - previous.y
+        let distance = hypot(dx, dy)
+        guard distance > 0 else { return tip }
+        let baseDistance = min(headSize * cos(.pi / 6), distance * 0.8)
+        return CGPoint(
+            x: tip.x - dx / distance * baseDistance,
+            y: tip.y - dy / distance * baseDistance
+        )
+    }
+
+    private func drawHead(
+        _ style: ArrowHeadStyle,
+        at end: CGPoint,
+        from previous: CGPoint,
+        size: CGFloat,
+        color: CanvasColor,
+        graphics: CGContext
+    ) {
         guard style != .none else { return }
         let angle = atan2(end.y - previous.y, end.x - previous.x)
-        let size = max(8, arrow.lineWidth * 4)
         let left = CGPoint(x: end.x - cos(angle - .pi / 6) * size, y: end.y - sin(angle - .pi / 6) * size)
         let right = CGPoint(x: end.x - cos(angle + .pi / 6) * size, y: end.y - sin(angle + .pi / 6) * size)
         graphics.beginPath()
@@ -75,7 +81,7 @@ final class ArrowElementRenderer: CanvasElementRenderer {
         graphics.addLine(to: left)
         if style == .triangle { graphics.addLine(to: right); graphics.closePath() } else { graphics.move(to: end); graphics.addLine(to: right) }
         if style == .triangle {
-            graphics.setFillColor(NSColor(canvasColor: arrow.color).cgColor)
+            graphics.setFillColor(NSColor(canvasColor: color).cgColor)
             graphics.fillPath()
         } else {
             graphics.strokePath()

@@ -8,10 +8,14 @@ final class NativeCanvasView: NSView {
     var transientBox: CanvasRect?
     var transientArrow: (CanvasPoint, CanvasPoint)?
     var transientMarquee: CanvasRect?
+    private(set) var hoveredElementID: String?
+    private(set) var hoveredAttachment: ArrowAttachment?
 
     private let sceneRenderer = CanvasSceneRenderer()
+    private let paperRenderer = GraphPaperRenderer()
     private let overlayRenderer = CanvasOverlayRenderer()
     private let textEditor = TextEditOverlay()
+    private let cardTitleEditor = CardTitleEditOverlay()
     private var cancellables: Set<AnyCancellable> = []
     private var tools: [CanvasToolKind: any CanvasTool] = [:]
     private var interactionContext: CanvasInteractionContext!
@@ -62,10 +66,12 @@ final class NativeCanvasView: NSView {
             hasFittedPage = true
         }
         textEditor.layout()
+        cardTitleEditor.layout()
     }
 
     func resetForPage() {
         textEditor.finish(commit: true)
+        cardTitleEditor.finish(commit: true)
         hasFittedPage = false
         needsLayout = true
         needsDisplay = true
@@ -74,6 +80,7 @@ final class NativeCanvasView: NSView {
     func fitPage() {
         viewport.fit(pageSize: controller.pageSize.cgSize, in: bounds.size)
         textEditor.layout()
+        cardTitleEditor.layout()
         needsDisplay = true
     }
 
@@ -92,6 +99,7 @@ final class NativeCanvasView: NSView {
         NSBezierPath(rect: pageRect).fill()
         NSGraphicsContext.restoreGraphicsState()
         guard let graphics = NSGraphicsContext.current?.cgContext else { return }
+        paperRenderer.draw(pageSize: controller.pageSize, destination: pageRect, graphics: graphics)
         sceneRenderer.draw(
             scene: controller.scene,
             pageSize: controller.pageSize,
@@ -102,6 +110,8 @@ final class NativeCanvasView: NSView {
         overlayRenderer.draw(
             scene: controller.scene,
             selection: controller.selection.ids,
+            hoveredElementID: hoveredElementID,
+            hoveredAttachment: hoveredAttachment,
             viewport: viewport,
             marquee: transientMarquee,
             transientBox: transientBox,
@@ -115,6 +125,25 @@ final class NativeCanvasView: NSView {
         let kind: CanvasToolKind = spaceHeld ? .pan : controller.activeTool
         activeInteractionTool = tools[kind]
         activeInteractionTool?.mouseDown(at: point, event: event, context: interactionContext)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHover(at: worldPoint(for: event))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        clearHover()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        ))
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -145,6 +174,7 @@ final class NativeCanvasView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         viewport.zoom(by: 1 + event.magnification, around: location)
         textEditor.layout()
+        cardTitleEditor.layout()
         needsDisplay = true
     }
 
@@ -157,6 +187,7 @@ final class NativeCanvasView: NSView {
             viewport.zoom(by: exp(-event.scrollingDeltaY * 0.04), around: location)
         }
         textEditor.layout()
+        cardTitleEditor.layout()
         needsDisplay = true
     }
 
@@ -181,7 +212,7 @@ final class NativeCanvasView: NSView {
         }
         switch event.keyCode {
         case 51, 117: controller.deleteSelection()
-        case 36, 76: editSelectedElement()
+        case 36, 76: editSelectionFromKeyboard()
         case 123: nudge(dx: -1, dy: 0, event: event)
         case 124: nudge(dx: 1, dy: 0, event: event)
         case 125: nudge(dx: 0, dy: 1, event: event)
@@ -223,10 +254,47 @@ final class NativeCanvasView: NSView {
         overlayRenderer.arrowEndpoint(scene: controller.scene, selection: controller.selection.ids, point: point, viewport: viewport)
     }
 
+    func arrowCurveHandle(at point: CanvasPoint) -> String? {
+        overlayRenderer.arrowCurveHandle(
+            scene: controller.scene,
+            selection: controller.selection.ids,
+            point: point,
+            viewport: viewport
+        )
+    }
+
     func beginEditingText(_ id: String) {
         guard case let .text(text)? = controller.scene.element(id: id) else { return }
+        cardTitleEditor.finish(commit: true)
         controller.selection.selectOnly(id)
         textEditor.begin(element: text, in: self)
+    }
+
+    func beginEditingCardTitle(_ id: String) {
+        guard case let .card(card)? = controller.scene.element(id: id) else { return }
+        textEditor.finish(commit: true)
+        controller.selection.selectOnly(id)
+        cardTitleEditor.begin(card: card, in: self)
+    }
+
+    func updateHover(at point: CanvasPoint) {
+        let attachment = CanvasGeometry.nearestAttachment(
+            to: point,
+            in: controller.scene,
+            maximumDistance: 12 / Double(viewport.scale)
+        )
+        let elementID = attachment?.elementID ?? hitTestElement(at: point)?.id
+        guard elementID != hoveredElementID || attachment != hoveredAttachment else { return }
+        hoveredElementID = elementID
+        hoveredAttachment = attachment
+        needsDisplay = true
+    }
+
+    func clearHover() {
+        guard hoveredElementID != nil || hoveredAttachment != nil else { return }
+        hoveredElementID = nil
+        hoveredAttachment = nil
+        needsDisplay = true
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -238,6 +306,9 @@ final class NativeCanvasView: NSView {
         let menu = NSMenu()
         menu.addItem(withTitle: "Edit", action: #selector(editSelection), keyEquivalent: "")
         menu.addItem(withTitle: "Duplicate", action: #selector(duplicateSelectionAction), keyEquivalent: "")
+        if case .card? = controller.selectedElement {
+            menu.addItem(withTitle: "Resize Card…", action: #selector(resizeCard), keyEquivalent: "")
+        }
         if case .text? = controller.selectedElement { addTextControls(to: menu) }
         if case .arrow? = controller.selectedElement { addArrowControls(to: menu) }
         menu.addItem(NSMenuItem.separator())
@@ -255,11 +326,25 @@ final class NativeCanvasView: NSView {
     @objc private func bringToFront() { reorderSelection(toFront: true) }
     @objc private func sendToBack() { reorderSelection(toFront: false) }
 
+    @objc private func resizeCard() {
+        guard case let .card(card)? = controller.selectedElement,
+              let size = CardResizeDialog.requestSize(current: card.geometry.frame, maximum: controller.pageSize) else { return }
+        controller.mutateSelectedElement(actionName: "Resize Card") { element in
+            guard case var .card(card) = element else { return }
+            card.geometry.frame.width = size.width
+            card.geometry.frame.height = size.height
+            card.geometry.frame = card.geometry.frame.constrained(to: controller.pageSize)
+            element = .card(card)
+        }
+    }
+
     @objc private func setArrowRouting(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let routing = ArrowRoutingStyle(rawValue: raw) else { return }
         controller.mutateSelectedElement(actionName: "Change Arrow Route") { element in
             guard case var .arrow(arrow) = element else { return }
             arrow.routing = routing
+            if routing != .curved { arrow.bendPoint = nil }
+            arrow.refreshBounds()
             element = .arrow(arrow)
         }
     }
@@ -291,30 +376,6 @@ final class NativeCanvasView: NSView {
         }
     }
 
-    @objc private func setTextBackground(_ sender: NSMenuItem) {
-        let colors: [CanvasColor] = [
-            .clear,
-            .white,
-            CanvasColor(red: 0.88, green: 0.94, blue: 1, alpha: 1),
-        ]
-        guard colors.indices.contains(sender.tag) else { return }
-        controller.mutateSelectedElement(actionName: "Change Text Background") { element in
-            guard case var .text(text) = element else { return }
-            text.backgroundColor = colors[sender.tag]
-            element = .text(text)
-        }
-    }
-
-    @objc private func toggleTextBorder() {
-        controller.mutateSelectedElement(actionName: "Toggle Text Border") { element in
-            guard case var .text(text) = element else { return }
-            let enabled = text.borderWidth == 0
-            text.borderWidth = enabled ? 1 : 0
-            text.borderColor = enabled ? CanvasColor(red: 0.72, green: 0.74, blue: 0.78, alpha: 1) : .clear
-            element = .text(text)
-        }
-    }
-
     private func worldPoint(for event: NSEvent) -> CanvasPoint {
         let view = convert(event.locationInWindow, from: nil)
         let world = viewport.worldPoint(fromView: view)
@@ -329,6 +390,13 @@ final class NativeCanvasView: NSView {
         case .card: controller.requestCardEditor(for: id)
         default: break
         }
+    }
+
+    private func editSelectionFromKeyboard() {
+        guard controller.selection.ids.count == 1, let id = controller.selection.ids.first,
+              let element = controller.scene.element(id: id) else { return }
+        if case .card = element { beginEditingCardTitle(id) }
+        else { editSelectedElement() }
     }
 
     private func addArrowControls(to menu: NSMenu) {
@@ -376,18 +444,6 @@ final class NativeCanvasView: NSView {
         size.submenu = sizeMenu
         menu.addItem(size)
 
-        let backgroundMenu = NSMenu()
-        ["None", "White", "Blue"].enumerated().forEach { index, title in
-            let item = backgroundMenu.addItem(withTitle: title, action: #selector(setTextBackground(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = index
-        }
-        let background = NSMenuItem(title: "Background", action: nil, keyEquivalent: "")
-        background.submenu = backgroundMenu
-        menu.addItem(background)
-
-        let border = menu.addItem(withTitle: "Toggle Border", action: #selector(toggleTextBorder), keyEquivalent: "")
-        border.target = self
     }
 
     private func nudge(dx: Double, dy: Double, event: NSEvent) {
@@ -400,6 +456,11 @@ final class NativeCanvasView: NSView {
                 arrow.start.point.y += dy * multiplier
                 arrow.end.point.x += dx * multiplier
                 arrow.end.point.y += dy * multiplier
+                if var bendPoint = arrow.bendPoint {
+                    bendPoint.x += dx * multiplier
+                    bendPoint.y += dy * multiplier
+                    arrow.bendPoint = bendPoint
+                }
                 arrow.start.attachment = nil
                 arrow.end.attachment = nil
                 arrow.refreshBounds()
@@ -419,19 +480,42 @@ final class NativeCanvasView: NSView {
     private func copySelection() {
         let elements = controller.scene.elements.filter { controller.selection.ids.contains($0.id) }
         guard let data = try? NotebookCoding.encoder.encode(elements) else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setData(data, forType: NSPasteboard.PasteboardType("com.productivity-os.notes.canvas-elements"))
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setData(data, forType: canvasElementsPasteboardType)
+        if elements.count == 1, case let .image(image) = elements[0], let data = controller.assetData(hash: image.assetHash) {
+            CanvasImagePasteboard.write(data, to: pasteboard)
+        }
     }
 
     private func pasteSelection() {
-        let type = NSPasteboard.PasteboardType("com.productivity-os.notes.canvas-elements")
-        guard let data = NSPasteboard.general.data(forType: type),
-              let values = try? NotebookCoding.decoder.decode([CanvasElementRecord].self, from: data) else { return }
-        let copies = duplicate(values)
-        var updated = controller.scene
-        updated.elements.append(contentsOf: copies)
-        controller.selection.select(Set(copies.map(\.id)))
-        controller.commit(updated, actionName: "Paste")
+        let pasteboard = NSPasteboard.general
+        if let data = pasteboard.data(forType: canvasElementsPasteboardType),
+           let values = try? NotebookCoding.decoder.decode([CanvasElementRecord].self, from: data),
+           values.allSatisfy({ element in
+               guard case let .image(image) = element else { return true }
+               return controller.assetData(hash: image.assetHash) != nil
+           }) {
+            let copies = duplicate(values)
+            var updated = controller.scene
+            updated.elements.append(contentsOf: copies)
+            controller.selection.select(Set(copies.map(\.id)))
+            controller.commit(updated, actionName: "Paste")
+            return
+        }
+        guard let image = CanvasImagePasteboard.read(from: pasteboard) else { return }
+        let center = viewport.worldPoint(fromView: CGPoint(x: bounds.midX, y: bounds.midY))
+        let insertion = CanvasPoint(x: max(0, center.x - 120), y: max(0, center.y - 90))
+        _ = controller.insertImage(
+            data: image.data,
+            filename: image.filename,
+            mediaType: image.mediaType,
+            at: insertion
+        )
+    }
+
+    private var canvasElementsPasteboardType: NSPasteboard.PasteboardType {
+        NSPasteboard.PasteboardType("com.productivity-os.notes.canvas-elements")
     }
 
     private func duplicateSelection() {
@@ -463,6 +547,10 @@ final class NativeCanvasView: NSView {
                 if let id = arrow.end.attachment?.elementID { arrow.end.attachment?.elementID = mapping[id] ?? id }
                 arrow.start.point.x += 16; arrow.start.point.y += 16
                 arrow.end.point.x += 16; arrow.end.point.y += 16
+                if var bendPoint = arrow.bendPoint {
+                    bendPoint.x += 16; bendPoint.y += 16
+                    arrow.bendPoint = bendPoint
+                }
                 arrow.refreshBounds()
                 return .arrow(arrow)
             }

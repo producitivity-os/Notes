@@ -5,6 +5,7 @@ configuration="${1:-Debug}"
 action="${2:-build}"
 tools_directory="$(cd "$(dirname "$0")" && pwd)"
 notes_directory="$(cd "$tools_directory/../.." && pwd)"
+host_architecture="$(uname -m)"
 
 case "$configuration" in
   Debug)
@@ -25,6 +26,7 @@ xcodebuild \
   -quiet \
   -project Notes.xcodeproj \
   -scheme Notes \
+  -destination "platform=macOS,arch=$host_architecture" \
   -configuration "$configuration" \
   -derivedDataPath "$derived_data" \
   CODE_SIGNING_ALLOWED=NO \

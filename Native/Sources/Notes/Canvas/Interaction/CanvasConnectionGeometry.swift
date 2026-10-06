@@ -18,6 +18,7 @@ enum CanvasGeometry {
         let t = CGFloat(min(max(attachment.position, 0), 1))
         let unrotated: CGPoint
         switch attachment.edge {
+        case .center: unrotated = CGPoint(x: frame.midX, y: frame.midY)
         case .top: unrotated = CGPoint(x: frame.minX + frame.width * t, y: frame.minY)
         case .right: unrotated = CGPoint(x: frame.maxX, y: frame.minY + frame.height * t)
         case .bottom: unrotated = CGPoint(x: frame.minX + frame.width * t, y: frame.maxY)
@@ -37,6 +38,7 @@ enum CanvasGeometry {
         for element in scene.elements where element.acceptsArrowAttachment && element.id != excludedID {
             let frame = element.geometry.frame.cgRect
             let candidates: [(ArrowAnchorEdge, CGPoint)] = [
+                (.center, CGPoint(x: frame.midX, y: frame.midY)),
                 (.top, CGPoint(x: frame.midX, y: frame.minY)),
                 (.right, CGPoint(x: frame.maxX, y: frame.midY)),
                 (.bottom, CGPoint(x: frame.midX, y: frame.maxY)),

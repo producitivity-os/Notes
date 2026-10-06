@@ -90,17 +90,114 @@ final class NotebookPackageTests: XCTestCase {
         XCTAssertEqual(controller.scene.elements.count, 1)
     }
 
+    @MainActor
+    func testClipboardImageInsertionUsesNativeAssetEnvironment() throws {
+        let controller = NativeCanvasController()
+        var importedData: Data?
+        controller.loadStandalone(
+            scene: .blank(),
+            pageSize: CanvasSize(width: 500, height: 500),
+            assetData: { _ in nil },
+            importAsset: { data, filename, mediaType in
+                importedData = data
+                return NotebookAssetMetadata(
+                    hash: "clipboard-image",
+                    filename: filename,
+                    thumbnailFilename: nil,
+                    mediaType: mediaType,
+                    byteCount: data.count,
+                    createdAt: Date()
+                )
+            },
+            onCommit: { _ in }
+        )
+        let bytes = Data("clipboard image".utf8)
+        XCTAssertTrue(controller.insertImage(data: bytes, filename: "Paste.png", mediaType: "image/png", at: .zero))
+        XCTAssertEqual(importedData, bytes)
+        guard case let .image(image)? = controller.scene.elements.first else {
+            return XCTFail("Expected a native image element")
+        }
+        XCTAssertEqual(image.assetHash, "clipboard-image")
+    }
+
     func testArrowAttachmentTracksTargetGeometry() throws {
         let text = TextElement.make(frame: CanvasRect(x: 100, y: 100, width: 200, height: 100))
         var scene = CanvasSceneDocument.blank()
         scene.elements = [.text(text)]
         let attachment = ArrowAttachment(elementID: text.id, edge: .right, position: 0.5)
         XCTAssertEqual(CanvasGeometry.attachmentPoint(attachment, in: scene), CanvasPoint(x: 300, y: 150))
+        let center = ArrowAttachment(elementID: text.id, edge: .center, position: 0.5)
+        XCTAssertEqual(CanvasGeometry.attachmentPoint(center, in: scene), CanvasPoint(x: 200, y: 150))
+        XCTAssertEqual(
+            CanvasGeometry.nearestAttachment(to: CanvasPoint(x: 202, y: 151), in: scene)?.edge,
+            .center
+        )
+        XCTAssertEqual(
+            CanvasGeometry.nearestAttachment(to: CanvasPoint(x: 299, y: 150), in: scene)?.edge,
+            .right
+        )
 
         var moved = text
         moved.geometry.frame.x = 180
         scene.replace(.text(moved))
         XCTAssertEqual(CanvasGeometry.attachmentPoint(attachment, in: scene), CanvasPoint(x: 380, y: 150))
+        XCTAssertEqual(CanvasGeometry.attachmentPoint(center, in: scene), CanvasPoint(x: 280, y: 150))
+    }
+
+    func testArrowBendPointDefinesTheVisibleCurve() throws {
+        var arrow = ArrowElement.make(start: CanvasPoint(x: 20, y: 40), end: CanvasPoint(x: 220, y: 40))
+        arrow.routing = .curved
+        arrow.bendPoint = CanvasPoint(x: 120, y: 120)
+        arrow.refreshBounds()
+        var scene = CanvasSceneDocument.blank()
+        scene.elements = [.arrow(arrow)]
+
+        let points = ArrowPathGeometry.sampledPoints(for: arrow, in: scene, curveSegments: 32)
+        XCTAssertEqual(points[16].x, 120, accuracy: 0.001)
+        XCTAssertEqual(points[16].y, 120, accuracy: 0.001)
+        XCTAssertEqual(arrow.geometry.frame.cgRect.minX, 20, accuracy: 0.001)
+        XCTAssertEqual(arrow.geometry.frame.cgRect.maxX, 220, accuracy: 0.001)
+        XCTAssertEqual(arrow.geometry.frame.cgRect.minY, 40, accuracy: 0.001)
+        XCTAssertEqual(arrow.geometry.frame.cgRect.maxY, 120, accuracy: 0.001)
+
+        let restored = try NotebookCoding.decoder.decode(
+            ArrowElement.self,
+            from: NotebookCoding.encoder.encode(arrow)
+        )
+        XCTAssertEqual(restored.bendPoint, arrow.bendPoint)
+    }
+
+    func testArrowWithoutPersistedBendPointRemainsCompatible() throws {
+        let arrow = ArrowElement.make(start: CanvasPoint(x: 10, y: 20), end: CanvasPoint(x: 90, y: 120))
+        let encoded = try NotebookCoding.encoder.encode(arrow)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "bendPoint")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let restored = try NotebookCoding.decoder.decode(ArrowElement.self, from: legacyData)
+        XCTAssertNil(restored.bendPoint)
+    }
+
+    @MainActor
+    func testArrowHitTestingUsesRenderedRouteAndVisualZOrder() throws {
+        let renderer = CanvasSceneRenderer()
+        var arrow = ArrowElement.make(start: CanvasPoint(x: 20, y: 100), end: CanvasPoint(x: 260, y: 100))
+        arrow.routing = .curved
+        arrow.bendPoint = CanvasPoint(x: 140, y: 180)
+        arrow.refreshBounds()
+        var scene = CanvasSceneDocument.blank()
+        scene.elements = [.arrow(arrow)]
+        XCTAssertEqual(
+            renderer.hitTest(scene: scene, point: CanvasPoint(x: 140, y: 180), assetData: { _ in nil })?.id,
+            arrow.id
+        )
+        XCTAssertNil(renderer.hitTest(scene: scene, point: CanvasPoint(x: 140, y: 100), assetData: { _ in nil }))
+
+        let card = CardElement.make(frame: CanvasRect(x: 110, y: 145, width: 60, height: 70))
+        scene.elements.append(.card(card))
+        XCTAssertEqual(
+            renderer.hitTest(scene: scene, point: CanvasPoint(x: 140, y: 180), assetData: { _ in nil })?.id,
+            card.id
+        )
     }
 
     func testPageDeletionSafeguard() {
@@ -135,7 +232,9 @@ final class CanvasViewportTests: XCTestCase {
         XCTAssertFalse(CanvasToolKind.toolbarTools.contains(.pan))
         XCTAssertEqual(CanvasToolKind.select.resourceIconName, "pointer")
         XCTAssertEqual(CanvasToolKind.text.resourceIconName, "markdown")
-        XCTAssertEqual(CanvasToolKind.arrow.resourceIconName, "workflow")
+        XCTAssertEqual(CanvasToolKind.card.resourceIconName, "square")
+        XCTAssertEqual(CanvasToolKind.arrow.resourceIconName, "link")
+        XCTAssertEqual(ArrowElement.make(start: .zero, end: CanvasPoint(x: 20, y: 20)).color, .accent)
     }
 
     func testWorldAndViewCoordinateRoundTrip() {

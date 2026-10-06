@@ -3,14 +3,14 @@ import AppKit
 @MainActor
 final class CanvasPreviewRenderer {
     private let sceneRenderer = CanvasSceneRenderer()
+    private let paperRenderer = GraphPaperRenderer()
 
     func png(scene: CanvasSceneDocument, pageSize: CanvasSize, assetData: @escaping (String) -> Data?, maximumPixelSize: CGFloat = 1200) -> Data? {
         let scale = min(1, maximumPixelSize / max(pageSize.width, pageSize.height))
         let imageSize = CGSize(width: pageSize.width * scale, height: pageSize.height * scale)
-        let image = NSImage(size: imageSize, flipped: true) { [sceneRenderer] rect in
-            NSColor.white.setFill()
-            rect.fill()
+        let image = NSImage(size: imageSize, flipped: true) { [sceneRenderer, paperRenderer] rect in
             guard let graphics = NSGraphicsContext.current?.cgContext else { return false }
+            paperRenderer.draw(pageSize: pageSize, destination: rect, graphics: graphics)
             sceneRenderer.draw(scene: scene, pageSize: pageSize, destination: rect, graphics: graphics, assetData: assetData)
             return true
         }

@@ -25,7 +25,8 @@ enum CanvasToolKind: String, CaseIterable, Identifiable {
         switch self {
         case .select: "pointer"
         case .text: "markdown"
-        case .arrow: "workflow"
+        case .card: "square"
+        case .arrow: "link"
         default: nil
         }
     }

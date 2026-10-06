@@ -33,7 +33,9 @@ targets:
         buildPhase: resources
       - path: Native/Resources/markdown.svg
         buildPhase: resources
-      - path: Native/Resources/workflow.svg
+      - path: Native/Resources/square.svg
+        buildPhase: resources
+      - path: Native/Resources/link.svg
         buildPhase: resources
     info:
       path: Native/Config/Notes-Info.plist

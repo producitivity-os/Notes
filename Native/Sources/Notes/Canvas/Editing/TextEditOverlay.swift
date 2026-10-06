@@ -15,17 +15,16 @@ final class TextEditOverlay: NSObject, NSTextViewDelegate {
         elementID = element.id
         let textView = NSTextView()
         textView.string = element.markdown
-        textView.font = .monospacedSystemFont(ofSize: max(12, element.fontSize), weight: .regular)
-        textView.textContainerInset = NSSize(width: 6, height: 6)
+        textView.font = .systemFont(ofSize: element.fontSize, weight: .regular)
         textView.isRichText = false
+        textView.drawsBackground = false
         textView.usesFindPanel = true
         textView.delegate = self
         let scroll = NSScrollView()
         scroll.documentView = textView
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .lineBorder
-        scroll.wantsLayer = true
-        scroll.layer?.cornerRadius = 6
+        scroll.hasVerticalScroller = false
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
         scrollView = scroll
         host.addSubview(scroll)
         layout()
@@ -37,6 +36,14 @@ final class TextEditOverlay: NSObject, NSTextViewDelegate {
         guard let host, let elementID,
               case let .text(text)? = host.controller.scene.element(id: elementID) else { return }
         scrollView?.frame = host.viewport.viewRect(fromWorld: text.geometry.frame.cgRect)
+        if let textView = scrollView?.documentView as? NSTextView {
+            let scale = host.viewport.scale
+            textView.font = .systemFont(ofSize: max(1, text.fontSize * scale), weight: .regular)
+            textView.textContainerInset = NSSize(
+                width: text.padding * scale,
+                height: text.padding * scale
+            )
+        }
     }
 
     func finish(commit: Bool) {

@@ -10,17 +10,6 @@ final class TextElementRenderer: CanvasElementRenderer {
     func draw(_ element: CanvasElementRecord, context: CanvasDrawingContext) {
         guard case let .text(text) = element else { return }
         let frame = text.geometry.frame.cgRect
-        let background = NSColor(canvasColor: text.backgroundColor)
-        if background.alphaComponent > 0 {
-            background.setFill()
-            NSBezierPath(roundedRect: frame, xRadius: text.cornerRadius, yRadius: text.cornerRadius).fill()
-        }
-        if text.borderWidth > 0 {
-            NSColor(canvasColor: text.borderColor).setStroke()
-            let border = NSBezierPath(roundedRect: frame, xRadius: text.cornerRadius, yRadius: text.cornerRadius)
-            border.lineWidth = text.borderWidth
-            border.stroke()
-        }
         let content = frame.insetBy(dx: text.padding, dy: text.padding)
         let attributed = NSMutableAttributedString(attributedString: context.markdownRenderer.attributedString(
             markdown: text.markdown,

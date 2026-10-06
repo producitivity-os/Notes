@@ -10,7 +10,7 @@ build:
     zsh Native/Tools/native-build.sh Debug build
 
 open:
-    open -n .build/xcode/Build/Products/Debug/Notes.app
+    open -n -F .build/xcode/Build/Products/Debug/Notes.app
 
 run: build
     just open

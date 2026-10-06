@@ -18,7 +18,15 @@ final class ArrowTool: CanvasTool {
 
     func mouseDragged(to point: CanvasPoint, event: NSEvent, context: CanvasInteractionContext) {
         guard let start else { return }
-        context.view.transientArrow = (start.point, point)
+        context.view.updateHover(at: point)
+        let attachment = CanvasGeometry.nearestAttachment(
+            to: point,
+            in: context.scene,
+            excluding: start.attachment?.elementID,
+            maximumDistance: 18 / Double(context.view.viewport.scale)
+        )
+        let resolved = attachment.flatMap { CanvasGeometry.attachmentPoint($0, in: context.scene) } ?? point
+        context.view.transientArrow = (start.point, resolved)
         context.redraw()
     }
 
@@ -40,6 +48,7 @@ final class ArrowTool: CanvasTool {
         }
         self.start = nil
         context.view.transientArrow = nil
+        context.view.updateHover(at: point)
         context.controller.activeTool = .select
         context.redraw()
     }
@@ -47,6 +56,7 @@ final class ArrowTool: CanvasTool {
     func cancel(context: CanvasInteractionContext) {
         start = nil
         context.view.transientArrow = nil
+        context.view.clearHover()
         context.redraw()
     }
 }

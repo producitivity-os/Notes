@@ -127,7 +127,13 @@ final class NativeCanvasController: ObservableObject {
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
         let type = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType?.identifier) ?? "application/octet-stream"
-        guard let metadata = environment.importAsset(data, url.lastPathComponent, type) else { return }
+        insertImage(data: data, filename: url.lastPathComponent, mediaType: type, at: point)
+        activeTool = .select
+    }
+
+    @discardableResult
+    func insertImage(data: Data, filename: String, mediaType: String, at point: CanvasPoint) -> Bool {
+        guard let metadata = environment.importAsset(data, filename, mediaType) else { return false }
         let imageSize = NSImage(data: data)?.size ?? CGSize(width: 240, height: 180)
         let maximum: CGFloat = 280
         let scale = min(1, maximum / max(imageSize.width, imageSize.height))
@@ -137,8 +143,9 @@ final class NativeCanvasController: ObservableObject {
             width: max(40, imageSize.width * scale),
             height: max(40, imageSize.height * scale)
         ).constrained(to: pageSize)
-        addElement(.image(.make(frame: frame, assetHash: metadata.hash, label: url.deletingPathExtension().lastPathComponent)), actionName: "Insert Image")
-        activeTool = .select
+        let label = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
+        addElement(.image(.make(frame: frame, assetHash: metadata.hash, label: label)), actionName: "Insert Image")
+        return true
     }
 
     func assetData(hash: String) -> Data? { environment.assetData(hash) }

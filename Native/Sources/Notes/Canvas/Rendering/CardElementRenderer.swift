@@ -21,6 +21,29 @@ final class CardElementRenderer: CanvasElementRenderer {
         shape.addClip()
         context.drawScene(card.front, card.sideSize, frame.insetBy(dx: 2, dy: 2), context.depth + 1)
         context.graphics.restoreGState()
+        guard !card.title.isEmpty else { return }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .left
+        paragraph.lineBreakMode = .byTruncatingTail
+        let title = NSAttributedString(
+            string: card.title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 18, weight: .regular),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        let titleFrame = frame.insetBy(dx: 14, dy: 0)
+        let measured = title.boundingRect(
+            with: CGSize(width: titleFrame.width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        title.draw(in: CGRect(
+            x: titleFrame.minX,
+            y: frame.midY - measured.height / 2,
+            width: titleFrame.width,
+            height: measured.height
+        ))
     }
 
     func hitTest(_ element: CanvasElementRecord, point: CanvasPoint, context: CanvasDrawingContext) -> Bool {
