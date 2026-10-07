@@ -8,8 +8,8 @@ fi
 
 source_image="${1:A}"
 tools_directory="$(cd "$(dirname "$0")" && pwd)"
-notes_directory="$(cd "$tools_directory/../.." && pwd)"
-resources_directory="$notes_directory/Native/Resources"
+notes_directory="$(cd "$tools_directory/.." && pwd)"
+resources_directory="$notes_directory/Resources"
 source_copy="$resources_directory/Icon-iOS-Default-1024@1x.png"
 iconset_directory="$resources_directory/Assets.xcassets/AppIcon.appiconset"
 

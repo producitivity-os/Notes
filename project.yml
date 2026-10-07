@@ -23,22 +23,25 @@ targets:
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: Native/Sources/NotebookKit
-      - path: Native/Sources/Notes
-      - path: Native/Resources/Assets.xcassets
+      - path: Sources/Shared
+      - path: Sources/macOS
+        excludes:
+          - Platform/Extensions
+          - Platform/Config
+      - path: Resources/Assets.xcassets
         buildPhase: resources
-      - path: Native/Resources/NotebookDocument.icns
+      - path: Resources/NotebookDocument.icns
         buildPhase: resources
-      - path: Native/Resources/pointer.svg
+      - path: Resources/pointer.svg
         buildPhase: resources
-      - path: Native/Resources/markdown.svg
+      - path: Resources/markdown.svg
         buildPhase: resources
-      - path: Native/Resources/square.svg
+      - path: Resources/square.svg
         buildPhase: resources
-      - path: Native/Resources/link.svg
+      - path: Resources/link.svg
         buildPhase: resources
     info:
-      path: Native/Config/Notes-Info.plist
+      path: Sources/macOS/Platform/Config/Notes-Info.plist
       properties:
         CFBundleDisplayName: Notes
         CFBundleShortVersionString: "1.0"
@@ -69,7 +72,7 @@ targets:
                 - ntbk
               public.mime-type: application/vnd.productivity-os.notebook
     entitlements:
-      path: Native/Config/Notes.entitlements
+      path: Sources/macOS/Platform/Config/Notes.entitlements
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -92,10 +95,10 @@ targets:
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: Native/Sources/NotebookKit
-      - path: Native/Sources/NotebookThumbnail
+      - path: Sources/Shared
+      - path: Sources/macOS/Platform/Extensions/NotebookThumbnail
     info:
-      path: Native/Config/NotebookThumbnail-Info.plist
+      path: Sources/macOS/Platform/Config/NotebookThumbnail-Info.plist
       properties:
         CFBundleDisplayName: Notebook Thumbnail
         CFBundleShortVersionString: "1.0"
@@ -108,7 +111,7 @@ targets:
               - com.productivity-os.notebook
             QLThumbnailMinimumDimension: 32
     entitlements:
-      path: Native/Config/NotesExtension.entitlements
+      path: Sources/macOS/Platform/Config/NotesExtension.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.thumbnail
@@ -121,10 +124,10 @@ targets:
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: Native/Sources/NotebookKit
-      - path: Native/Sources/NotebookPreview
+      - path: Sources/Shared
+      - path: Sources/macOS/Platform/Extensions/NotebookPreview
     info:
-      path: Native/Config/NotebookPreview-Info.plist
+      path: Sources/macOS/Platform/Config/NotebookPreview-Info.plist
       properties:
         CFBundleDisplayName: Notebook Preview
         CFBundleShortVersionString: "1.0"
@@ -137,7 +140,7 @@ targets:
             QLSupportedContentTypes:
               - com.productivity-os.notebook
     entitlements:
-      path: Native/Config/NotesExtension.entitlements
+      path: Sources/macOS/Platform/Config/NotesExtension.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.preview
@@ -150,10 +153,10 @@ targets:
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: Native/Sources/NotebookKit
-      - path: Native/Sources/ReviseNotebookAction
+      - path: Sources/Shared
+      - path: Sources/macOS/Platform/Extensions/ReviseNotebookAction
     info:
-      path: Native/Config/ReviseNotebookAction-Info.plist
+      path: Sources/macOS/Platform/Config/ReviseNotebookAction-Info.plist
       properties:
         CFBundleDisplayName: Revise Notebook
         CFBundleShortVersionString: "1.0"
@@ -168,7 +171,7 @@ targets:
             NSExtensionServiceAllowsFinderPreviewItem: true
             NSExtensionServiceFinderPreviewLabel: Revise Notebook
     entitlements:
-      path: Native/Config/NotesExtension.entitlements
+      path: Sources/macOS/Platform/Config/NotesExtension.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.revise-action
@@ -181,7 +184,7 @@ targets:
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: Native/Tests/NotesTests
+      - path: Tests/macOSTests
     dependencies:
       - target: Notes
     settings:

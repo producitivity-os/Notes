@@ -4,7 +4,7 @@ set -euo pipefail
 configuration="${1:-Debug}"
 action="${2:-build}"
 tools_directory="$(cd "$(dirname "$0")" && pwd)"
-notes_directory="$(cd "$tools_directory/../.." && pwd)"
+notes_directory="$(cd "$tools_directory/.." && pwd)"
 host_architecture="$(uname -m)"
 
 case "$configuration" in
