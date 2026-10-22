@@ -10,6 +10,20 @@ final class MarkdownRenderer {
     private let mathRenderer = MathRenderer()
     private var cache: [String: NSAttributedString] = [:]
 
+    func fittingSize(markdown: String, fontSize: CGFloat, color: NSColor, maximumWidth: CGFloat) -> CGSize {
+        let attributed = attributedString(
+            markdown: markdown,
+            fontSize: fontSize,
+            color: color,
+            maximumWidth: maximumWidth
+        )
+        let bounds = attributed.boundingRect(
+            with: CGSize(width: maximumWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        return CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
+    }
+
     func attributedString(markdown: String, fontSize: CGFloat, color: NSColor, maximumWidth: CGFloat) -> NSAttributedString {
         let key = "\(markdown)|\(fontSize)|\(color.description)|\(maximumWidth)"
         if let cached = cache[key] { return cached }
@@ -51,10 +65,11 @@ final class MarkdownRenderer {
         let range = NSRange(location: 0, length: mutable.length)
         mutable.addAttribute(.foregroundColor, value: color, range: range)
         mutable.enumerateAttribute(.font, in: range) { value, subrange, _ in
-            if value == nil { mutable.addAttribute(.font, value: NSFont.systemFont(ofSize: fontSize), range: subrange) }
-        }
-        if mutable.length > 0, mutable.attribute(.font, at: 0, effectiveRange: nil) == nil {
-            mutable.addAttribute(.font, value: NSFont.systemFont(ofSize: fontSize), range: range)
+            let sourceTraits = (value as? NSFont)?.fontDescriptor.symbolicTraits ?? []
+            let supportedTraits = sourceTraits.intersection([.bold, .italic])
+            let descriptor = NSFont.systemFont(ofSize: fontSize).fontDescriptor.withSymbolicTraits(supportedTraits)
+            let font = NSFont(descriptor: descriptor, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+            mutable.addAttribute(.font, value: font, range: subrange)
         }
         return mutable
     }
@@ -64,6 +79,17 @@ final class MarkdownRenderer {
         var cursor = source.startIndex
         var plainStart = cursor
         while cursor < source.endIndex {
+            if startsBracketDisplayDelimiter(at: cursor, in: source),
+               let close = closingBracketDisplayDelimiter(in: source, from: source.index(cursor, offsetBy: 2)) {
+                if plainStart < cursor { result.append(.markdown(String(source[plainStart..<cursor]))) }
+                let contentStart = source.index(cursor, offsetBy: 2)
+                let latex = String(source[contentStart..<close])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                result.append(.math(latex, display: true))
+                cursor = source.index(close, offsetBy: 2)
+                plainStart = cursor
+                continue
+            }
             guard source[cursor] == "$", !isEscaped(cursor, in: source) else {
                 cursor = source.index(after: cursor)
                 continue
@@ -85,6 +111,24 @@ final class MarkdownRenderer {
         return result.isEmpty ? [.markdown(source)] : result
     }
 
+    private func startsBracketDisplayDelimiter(at index: String.Index, in source: String) -> Bool {
+        guard source[index] == "\\", !isEscaped(index, in: source) else { return false }
+        let next = source.index(after: index)
+        return next < source.endIndex && source[next] == "["
+    }
+
+    private func closingBracketDisplayDelimiter(in source: String, from start: String.Index) -> String.Index? {
+        var cursor = start
+        while cursor < source.endIndex {
+            if source[cursor] == "\\" {
+                let next = source.index(after: cursor)
+                if next < source.endIndex, source[next] == "]" { return cursor }
+            }
+            cursor = source.index(after: cursor)
+        }
+        return nil
+    }
+
     private func closingDelimiter(in source: String, from start: String.Index, display: Bool) -> String.Index? {
         var cursor = start
         while cursor < source.endIndex {
@@ -100,6 +144,14 @@ final class MarkdownRenderer {
 
     private func isEscaped(_ index: String.Index, in source: String) -> Bool {
         guard index > source.startIndex else { return false }
-        return source[source.index(before: index)] == "\\"
+        var cursor = index
+        var slashCount = 0
+        while cursor > source.startIndex {
+            let previous = source.index(before: cursor)
+            guard source[previous] == "\\" else { break }
+            slashCount += 1
+            cursor = previous
+        }
+        return !slashCount.isMultiple(of: 2)
     }
 }

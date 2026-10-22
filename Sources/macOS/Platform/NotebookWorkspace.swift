@@ -7,10 +7,12 @@ struct NotebookWorkspace: View {
     @StateObject private var canvasController = NativeCanvasController()
     @State private var renamedPageID: String?
     @State private var renameText = ""
-    @AppStorage("newPageOrientation") private var newPageOrientation = NotebookPageOrientation.portrait.rawValue
+    @State private var cardEditorPanel: CardEditorPanelCoordinator?
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var refreshedInfinitePreviews = false
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             pageSidebar
                 .navigationSplitViewColumnWidth(min: 190, ideal: 225, max: 300)
         } detail: {
@@ -22,22 +24,57 @@ struct NotebookWorkspace: View {
             }
             .ignoresSafeArea(.container, edges: .bottom)
         }
+        .background(
+            LinearGradient(
+                stops: [
+                    .init(color: Color(nsColor: NSColor(calibratedWhite: 0.27, alpha: 1)), location: 0),
+                    .init(color: Color(nsColor: NSColor(calibratedWhite: 0.30, alpha: 1)), location: 0.023),
+                    .init(color: Color(nsColor: NSColor(calibratedWhite: 0.34, alpha: 1)), location: 0.052),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        )
+        .overlay(alignment: .topLeading) {
+            TransparentWindowChrome()
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+        }
         .navigationTitle("")
         .onAppear {
             canvasController.load(document: document, pageID: document.selectedPageID)
+            refreshInfinitePreviewsIfNeeded()
+            if cardEditorPanel == nil {
+                cardEditorPanel = CardEditorPanelCoordinator(sourceController: canvasController)
+            }
             applyPendingNavigation()
+            applyPendingPageCreation()
+            Task { await NotebookRoutineProvider.publish() }
         }
-        .onOpenURL { NotesNavigationCoordinator.shared.handle($0) }
+        .onDisappear { cardEditorPanel?.close() }
+        .onOpenURL { url in
+            if url.host == "routine-action" { Task { await NotebookRoutineController.shared.handle(url: url) } }
+            else { NotesNavigationCoordinator.shared.handle(url) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .notebookNavigationAvailable)) { _ in
             applyPendingNavigation()
+            applyPendingPageCreation()
         }
-        .sheet(item: Binding(
-            get: { canvasController.cardEditorRequest },
-            set: { canvasController.cardEditorRequest = $0 }
-        )) { request in
-            CardEditorSheet(card: request.card, sourceController: canvasController) { card in
-                canvasController.saveEditedCard(card)
+        .onReceive(NotificationCenter.default.publisher(for: .createNotebookPage)) { notification in
+            guard let target = notification.object as? NativeCanvasController,
+                  target === canvasController else { return }
+            addPage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleNotebookSidebar)) { _ in
+            withAnimation(.snappy(duration: 0.25)) {
+                columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
             }
+        }
+        .onReceive(canvasController.$cardEditorRequest) { request in
+            guard let request else { return }
+            cardEditorPanel?.present(card: request.card)
+            canvasController.cardEditorRequest = nil
         }
         .alert("Rename Page", isPresented: Binding(
             get: { renamedPageID != nil },
@@ -63,46 +100,47 @@ struct NotebookWorkspace: View {
         }
     }
 
+    private func applyPendingPageCreation() {
+        guard NotesNavigationCoordinator.shared.takePendingNewPage(for: document.package.manifest.notebookID) else { return }
+        addPage()
+    }
+
+    private func refreshInfinitePreviewsIfNeeded() {
+        guard !refreshedInfinitePreviews else { return }
+        refreshedInfinitePreviews = true
+        let renderer = CanvasPreviewRenderer()
+        for page in document.pages {
+            guard let scene = document.package.pagePayloads[page.id]?.scene,
+                  let data = renderer.pngFittingContent(
+                    scene: scene,
+                    fallbackSize: CanvasSize(width: page.width, height: page.height),
+                    gridPattern: page.resolvedGridPattern,
+                    assetData: { document.assetData(for: $0) }
+                  ) else { continue }
+            document.storePreview(pageID: page.id, data: data)
+        }
+    }
+
     private var pageSidebar: some View {
-        List(selection: selection) {
-            ForEach(document.pages) { page in
-                PageSidebarRow(
-                    page: page,
-                    previewData: document.preview(for: page.id),
-                    isCover: document.package.manifest.coverPageID == page.id
-                )
-                .tag(page.id)
-                .contextMenu { pageMenu(page) }
-            }
-            .onMove { document.movePages(from: $0, to: $1) }
-        }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) {
-            HStack {
-                Button { addPage() } label: {
-                    Label("Add Page", systemImage: "plus")
+        VStack(spacing: 0) {
+            List(selection: selection) {
+                ForEach(document.pages) { page in
+                    PageSidebarRow(
+                        page: page,
+                        previewData: document.preview(for: page.id),
+                        isCover: document.package.manifest.coverPageID == page.id
+                    )
+                    .tag(page.id)
+                    .contextMenu { pageMenu(page) }
                 }
-                Spacer()
-                Text("Drag pages to reorder")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                .onMove { document.movePages(from: $0, to: $1) }
             }
-            .labelStyle(.iconOnly)
-            .padding(10)
-            .background(.ultraThinMaterial)
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button { addPage() } label: {
-                    Label("Add Page", systemImage: "plus")
-                }
-            }
+            .listStyle(.sidebar)
         }
     }
 
     private func addPage() {
-        let orientation = NotebookPageOrientation(rawValue: newPageOrientation) ?? .portrait
-        document.addPage(after: document.selectedPageID, orientation: orientation)
+        document.addPage(after: document.selectedPageID)
         canvasController.load(document: document, pageID: document.selectedPageID)
     }
 
@@ -127,16 +165,6 @@ struct NotebookWorkspace: View {
             document.duplicatePage(id: page.id)
             canvasController.load(document: document, pageID: document.selectedPageID)
         }
-        Menu("Orientation", systemImage: "rectangle.portrait.rotate") {
-            Button("Portrait") {
-                document.setOrientation(.portrait, for: page.id)
-                if document.selectedPageID == page.id { canvasController.load(document: document, pageID: page.id) }
-            }
-            Button("Landscape") {
-                document.setOrientation(.landscape, for: page.id)
-                if document.selectedPageID == page.id { canvasController.load(document: document, pageID: page.id) }
-            }
-        }
         Button("Set as Cover", systemImage: "book.closed") { document.setCoverPage(id: page.id) }
             .disabled(document.package.manifest.coverPageID == page.id)
         Divider()
@@ -155,19 +183,19 @@ private struct PageSidebarRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Group {
+            ZStack {
+                Color(nsColor: .textBackgroundColor)
                 if let previewData, let image = NSImage(data: previewData) {
-                    Image(nsImage: image).resizable().scaledToFit()
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
                 } else {
-                    ZStack {
-                        Color.white
-                        Image(systemName: "doc.richtext").foregroundStyle(.secondary)
-                    }
+                    Image(systemName: "doc.richtext").foregroundStyle(.secondary)
                 }
             }
-            .frame(width: page.orientation == .portrait ? 52 : 68, height: page.orientation == .portrait ? 74 : 52)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(.separator.opacity(0.55)))
+            .frame(width: 68, height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(.separator.opacity(0.55)))
             .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
 
             VStack(alignment: .leading, spacing: 4) {

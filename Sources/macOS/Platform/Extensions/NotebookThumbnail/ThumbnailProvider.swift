@@ -18,9 +18,11 @@ final class ThumbnailProvider: QLThumbnailProvider {
         let reply = QLThumbnailReply(contextSize: size) {
             let rect = CGRect(origin: .zero, size: size)
             NSColor.windowBackgroundColor.setFill()
-            NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 14, yRadius: 14).fill()
-            let symbol = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Notebook")
-            symbol?.draw(in: rect.insetBy(dx: size.width * 0.2, dy: size.height * 0.2))
+            NSBezierPath(rect: rect.insetBy(dx: 1, dy: 1)).fill()
+            NSColor.separatorColor.setStroke()
+            NSBezierPath(rect: rect.insetBy(dx: 1, dy: 1)).stroke()
+            let symbol = NSImage(systemSymbolName: "book.pages", accessibilityDescription: "Notebook")
+            symbol?.draw(in: rect.insetBy(dx: size.width * 0.24, dy: size.height * 0.24))
             return true
         }
         reply.extensionBadge = "notebook"

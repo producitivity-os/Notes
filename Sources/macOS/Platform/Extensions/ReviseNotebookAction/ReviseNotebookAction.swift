@@ -27,12 +27,12 @@ final class ReviseNotebookAction: NSObject, NSExtensionRequestHandling {
             do {
                 let package = try NotebookPackageIO.read(at: url, verifyAssetHashes: false)
                 let request = try ReviewFileStore().createLaunchRequest(notebookURL: url, manifest: package.manifest)
-                guard let deepLink = URL(string: "productivity-revise://notebook?request=\(request.id)") else {
+                guard let deepLink = URL(string: "productivity-review://notebook?request=\(request.id)") else {
                     throw ActionError.invalidDeepLink
                 }
                 context.value.open(deepLink) { success in
                     if success { context.value.completeRequest(returningItems: [], completionHandler: nil) }
-                    else { context.value.cancelRequest(withError: ActionError.couldNotOpenRevise) }
+                    else { context.value.cancelRequest(withError: ActionError.couldNotOpenReview) }
                 }
             } catch {
                 context.value.cancelRequest(withError: error)
@@ -52,13 +52,13 @@ private final class SendableExtensionContext: @unchecked Sendable {
 private enum ActionError: LocalizedError {
     case missingNotebook
     case invalidDeepLink
-    case couldNotOpenRevise
+    case couldNotOpenReview
 
     var errorDescription: String? {
         switch self {
-        case .missingNotebook: "Select one notebook to revise."
-        case .invalidDeepLink: "The Revise launch request is invalid."
-        case .couldNotOpenRevise: "Revise could not be opened."
+        case .missingNotebook: "Select one notebook to review."
+        case .invalidDeepLink: "The Review launch request is invalid."
+        case .couldNotOpenReview: "Review could not be opened."
         }
     }
 }

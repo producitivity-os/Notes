@@ -31,7 +31,8 @@ enum CanvasToolKind: String, CaseIterable, Identifiable {
         }
     }
 
-    static let toolbarTools: [CanvasToolKind] = [.select, .text, .card, .image, .arrow]
+    static let toolbarTools: [CanvasToolKind] = [.select, .card, .arrow]
+    static let cardEditorTools: [CanvasToolKind] = [.select, .text, .image, .arrow]
 
     var label: String { rawValue.capitalized }
 }

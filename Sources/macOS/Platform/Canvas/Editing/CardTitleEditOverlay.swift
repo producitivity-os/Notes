@@ -8,13 +8,14 @@ final class CardTitleEditOverlay: NSObject, NSTextFieldDelegate {
     private var ending = false
 
     var isEditing: Bool { cardID != nil }
+    var editingCardID: String? { cardID }
 
     func begin(card: CardElement, in host: NativeCanvasView) {
         finish(commit: true)
         self.host = host
         cardID = card.id
 
-        let field = NSTextField(string: card.title)
+        let field = NSTextField(string: card.title == "Card" ? "" : card.title)
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false

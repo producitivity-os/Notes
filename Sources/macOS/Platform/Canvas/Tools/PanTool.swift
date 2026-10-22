@@ -12,8 +12,10 @@ final class PanTool: CanvasTool {
     func mouseDragged(to point: CanvasPoint, event: NSEvent, context: CanvasInteractionContext) {
         let current = context.view.convert(event.locationInWindow, from: nil)
         guard let last = lastViewPoint else { return }
-        context.view.viewport.offset.x -= current.x - last.x
-        context.view.viewport.offset.y -= current.y - last.y
+        context.view.viewport.pan(byViewTranslation: CGPoint(
+            x: current.x - last.x,
+            y: current.y - last.y
+        ))
         lastViewPoint = current
         context.redraw()
     }

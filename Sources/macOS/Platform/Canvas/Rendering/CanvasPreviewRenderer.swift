@@ -5,17 +5,42 @@ final class CanvasPreviewRenderer {
     private let sceneRenderer = CanvasSceneRenderer()
     private let paperRenderer = GraphPaperRenderer()
 
-    func png(scene: CanvasSceneDocument, pageSize: CanvasSize, assetData: @escaping (String) -> Data?, maximumPixelSize: CGFloat = 1200) -> Data? {
+    func png(
+        scene: CanvasSceneDocument,
+        pageSize: CanvasSize,
+        gridPattern: NotebookGridPattern = .dots,
+        pageTitle: String? = nil,
+        pageCreatedAt: Date? = nil,
+        assetData: @escaping (String) -> Data?,
+        maximumPixelSize: CGFloat = 1200
+    ) -> Data? {
         let scale = min(1, maximumPixelSize / max(pageSize.width, pageSize.height))
         let imageSize = CGSize(width: pageSize.width * scale, height: pageSize.height * scale)
         let image = NSImage(size: imageSize, flipped: true) { [sceneRenderer, paperRenderer] rect in
             guard let graphics = NSGraphicsContext.current?.cgContext else { return false }
-            paperRenderer.draw(pageSize: pageSize, destination: rect, graphics: graphics)
+            paperRenderer.draw(pageSize: pageSize, destination: rect, pattern: gridPattern, pageTitle: pageTitle, pageCreatedAt: pageCreatedAt, graphics: graphics)
             sceneRenderer.draw(scene: scene, pageSize: pageSize, destination: rect, graphics: graphics, assetData: assetData)
             return true
         }
         guard let tiff = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
         return bitmap.representation(using: .png, properties: [:])
+    }
+
+    func pngFittingContent(
+        scene: CanvasSceneDocument,
+        fallbackSize: CanvasSize,
+        gridPattern: NotebookGridPattern = .dots,
+        assetData: @escaping (String) -> Data?,
+        maximumPixelSize: CGFloat = 1200
+    ) -> Data? {
+        let layout = InfiniteCanvasPreviewLayout.make(scene: scene, fallbackSize: fallbackSize)
+        return png(
+            scene: layout.scene,
+            pageSize: layout.pageSize,
+            gridPattern: gridPattern,
+            assetData: assetData,
+            maximumPixelSize: maximumPixelSize
+        )
     }
 }

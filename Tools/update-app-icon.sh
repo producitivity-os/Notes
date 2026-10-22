@@ -36,4 +36,6 @@ for size in 16 32 128 256 512; do
   sips -s format png -z "$doubled" "$doubled" "$source_copy" --out "$iconset_directory/icon_${size}x${size}@2x.png" >/dev/null
 done
 
+sips -s format png -z 1024 1024 "$source_copy" --out "$iconset_directory/icon-iOS-1024.png" >/dev/null
+
 echo "Updated AppIcon from $source_image"

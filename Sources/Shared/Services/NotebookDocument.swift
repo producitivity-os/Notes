@@ -1,5 +1,5 @@
-import Foundation
 import SwiftUI
+import Foundation
 import UniformTypeIdentifiers
 
 final class NotebookDocument: ReferenceFileDocument, ObservableObject, @unchecked Sendable {
@@ -126,12 +126,21 @@ final class NotebookDocument: ReferenceFileDocument, ObservableObject, @unchecke
         objectWillChange.send()
     }
 
+    func setGridPattern(_ pattern: NotebookGridPattern, for id: String) {
+        guard let index = package.manifest.pages.firstIndex(where: { $0.id == id }),
+              package.manifest.pages[index].resolvedGridPattern != pattern else { return }
+        package.manifest.pages[index].gridPattern = pattern
+        package.manifest.pages[index].updatedAt = Date()
+        package.manifest.updatedAt = Date()
+        objectWillChange.send()
+    }
+
     @discardableResult
     func updateScene(pageID: String, scene: CanvasSceneDocument) -> Int? {
         guard let index = package.manifest.pages.firstIndex(where: { $0.id == pageID }),
               var payload = package.pagePayloads[pageID] else { return nil }
         payload.revision += 1
-        payload.scene = scene
+        payload.scene = scene.synchronizedArrowAttachments()
         package.pagePayloads[pageID] = payload
         package.manifest.requiredPlugins = []
         package.manifest.pages[index].revision = payload.revision

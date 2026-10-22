@@ -25,6 +25,7 @@ struct CanvasRect: Codable, Equatable, Hashable, Sendable {
 
     var cgRect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
     var center: CanvasPoint { CanvasPoint(x: x + width / 2, y: y + height / 2) }
+    var size: CanvasSize { CanvasSize(width: width, height: height) }
 
     func contains(_ point: CanvasPoint) -> Bool { cgRect.contains(point.cgPoint) }
 

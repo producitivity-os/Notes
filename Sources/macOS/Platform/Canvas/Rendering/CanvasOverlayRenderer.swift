@@ -3,12 +3,19 @@ import AppKit
 @MainActor
 final class CanvasOverlayRenderer {
     private let handleSize: CGFloat = 9
+    private let markdownRenderer: MarkdownRenderer
+
+    init(markdownRenderer: MarkdownRenderer = MarkdownRenderer()) {
+        self.markdownRenderer = markdownRenderer
+    }
 
     func draw(
         scene: CanvasSceneDocument,
         selection: Set<String>,
         hoveredElementID: String?,
         hoveredAttachment: ArrowAttachment?,
+        activeTool: CanvasToolKind,
+        editingTextID: String?,
         viewport: CanvasViewport,
         marquee: CanvasRect?,
         transientBox: CanvasRect?,
@@ -22,10 +29,20 @@ final class CanvasOverlayRenderer {
             let isHovered = element.id == hoveredElementID
             guard isSelected || isHovered else { continue }
             if case let .arrow(arrow) = element {
-                NSColor.systemBlue.setFill()
-                circle(at: viewport.viewPoint(fromWorld: resolved(arrow.start, scene: scene).cgPoint)).fill()
-                circle(at: viewport.viewPoint(fromWorld: resolved(arrow.end, scene: scene).cgPoint)).fill()
-                if isSelected {
+                if isSelected || activeTool == .arrow {
+                    for endpoint in [arrow.start, arrow.end] {
+                        let handle = circle(
+                            at: viewport.viewPoint(fromWorld: resolved(endpoint, scene: scene).cgPoint),
+                            size: 12
+                        )
+                        NSColor.white.setFill()
+                        handle.fill()
+                        NSColor.systemBlue.setStroke()
+                        handle.lineWidth = 2
+                        handle.stroke()
+                    }
+                }
+                if isSelected, arrow.routing == .curved {
                     let bend = viewport.viewPoint(fromWorld: ArrowPathGeometry.bendPoint(for: arrow, in: scene))
                     let handle = circle(at: bend, size: 12)
                     NSColor.windowBackgroundColor.setFill()
@@ -37,28 +54,38 @@ final class CanvasOverlayRenderer {
                 continue
             }
             let frame = viewport.viewRect(fromWorld: element.geometry.frame.cgRect)
-            let outline: NSBezierPath
-            if case .card = element {
-                let radius = 14 * viewport.scale
-                outline = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
+            let isEditingText = isText(element) && element.id == editingTextID
+            if case let .text(text) = element, !isEditingText {
+                if let outline = textPreviewOutline(for: text, viewport: viewport) {
+                    outline.lineWidth = 2
+                    outline.stroke()
+                }
             } else {
-                outline = NSBezierPath(rect: frame)
+                let outline: NSBezierPath
+                if case .card = element {
+                    let radius = 14 * viewport.scale
+                    outline = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
+                } else {
+                    outline = NSBezierPath(rect: frame)
+                }
+                outline.lineWidth = 2.5
+                outline.stroke()
+                if isSelected, !isCard(element) {
+                    NSColor.systemBlue.setFill()
+                    circle(at: CGPoint(x: frame.maxX, y: frame.maxY)).fill()
+                    circle(at: CGPoint(x: frame.midX, y: frame.minY - 24)).fill()
+                }
             }
-            outline.lineWidth = 2.5
-            outline.stroke()
-            if isSelected {
-                NSColor.systemBlue.setFill()
-                circle(at: CGPoint(x: frame.maxX, y: frame.maxY)).fill()
-                circle(at: CGPoint(x: frame.midX, y: frame.minY - 24)).fill()
-            }
-            for (edge, point) in connectionPoints(for: frame, rotation: element.geometry.rotation) {
-                let handle = circle(at: point)
-                NSColor.windowBackgroundColor.setFill()
-                handle.fill()
-                NSColor.systemBlue.setStroke()
-                let endpointIsHovered = hoveredAttachment?.elementID == element.id && hoveredAttachment?.edge == edge
-                handle.lineWidth = endpointIsHovered ? 4 : 2
-                handle.stroke()
+            if activeTool == .arrow {
+                for (edge, point) in connectionPoints(for: frame, rotation: element.geometry.rotation) {
+                    let handle = circle(at: point)
+                    NSColor.white.setFill()
+                    handle.fill()
+                    NSColor.systemBlue.setStroke()
+                    let endpointIsHovered = hoveredAttachment?.elementID == element.id && hoveredAttachment?.edge == edge
+                    handle.lineWidth = endpointIsHovered ? 4 : 2
+                    handle.stroke()
+                }
             }
         }
         if let marquee {
@@ -84,16 +111,30 @@ final class CanvasOverlayRenderer {
         }
     }
 
-    func resizeHandle(scene: CanvasSceneDocument, selection: Set<String>, point: CanvasPoint, viewport: CanvasViewport) -> String? {
+    func resizeHandle(
+        scene: CanvasSceneDocument,
+        selection: Set<String>,
+        editingTextID: String?,
+        point: CanvasPoint,
+        viewport: CanvasViewport
+    ) -> String? {
         guard selection.count == 1, let id = selection.first,
-              let element = scene.element(id: id), !isArrow(element) else { return nil }
+              let element = scene.element(id: id), !isArrow(element), !isCard(element) else { return nil }
+        if isText(element), editingTextID != id { return nil }
         let frame = element.geometry.frame.cgRect
         return distance(point.cgPoint, CGPoint(x: frame.maxX, y: frame.maxY)) <= handleRadius(viewport) ? id : nil
     }
 
-    func rotationHandle(scene: CanvasSceneDocument, selection: Set<String>, point: CanvasPoint, viewport: CanvasViewport) -> String? {
+    func rotationHandle(
+        scene: CanvasSceneDocument,
+        selection: Set<String>,
+        editingTextID: String?,
+        point: CanvasPoint,
+        viewport: CanvasViewport
+    ) -> String? {
         guard selection.count == 1, let id = selection.first,
               let element = scene.element(id: id), !isArrow(element) else { return nil }
+        if isText(element), editingTextID != id { return nil }
         let frame = element.geometry.frame.cgRect
         let handle = CGPoint(x: frame.midX, y: frame.minY - 24 / viewport.scale)
         return distance(point.cgPoint, handle) <= handleRadius(viewport) ? id : nil
@@ -192,4 +233,33 @@ final class CanvasOverlayRenderer {
     private func handleRadius(_ viewport: CanvasViewport) -> CGFloat { 10 / viewport.scale }
     private func distance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat { hypot(lhs.x - rhs.x, lhs.y - rhs.y) }
     private func isArrow(_ element: CanvasElementRecord) -> Bool { if case .arrow = element { true } else { false } }
+    private func isCard(_ element: CanvasElementRecord) -> Bool { if case .card = element { true } else { false } }
+    private func isText(_ element: CanvasElementRecord) -> Bool { if case .text = element { true } else { false } }
+
+    func textPreviewOutlineBounds(for text: TextElement, viewport: CanvasViewport) -> CGRect? {
+        textPreviewOutline(for: text, viewport: viewport)?.bounds
+    }
+
+    private func textPreviewOutline(for text: TextElement, viewport: CanvasViewport) -> NSBezierPath? {
+        guard let renderedBounds = TextElementRenderer.layout(
+            for: text,
+            markdownRenderer: markdownRenderer
+        ).renderedBounds else { return nil }
+
+        let rect = viewport.viewRect(fromWorld: renderedBounds).insetBy(dx: -3, dy: -3)
+        let center = viewport.viewPoint(fromWorld: text.geometry.frame.center.cgPoint)
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY),
+        ].map { CanvasGeometry.rotated($0, around: center, degrees: text.geometry.rotation) }
+
+        let path = NSBezierPath()
+        guard let first = corners.first else { return nil }
+        path.move(to: first)
+        corners.dropFirst().forEach(path.line(to:))
+        path.close()
+        return path
+    }
 }

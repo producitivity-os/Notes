@@ -1,31 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#eaf2ff"/>
-    </linearGradient>
-    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#61a6ff"/>
-      <stop offset="1" stop-color="#1769df"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="24" stdDeviation="26" flood-color="#17345d" flood-opacity=".28"/>
+    <filter id="shadow" x="-20%" y="-20%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="22" stdDeviation="25" flood-color="#132238" flood-opacity=".26"/>
     </filter>
+    <linearGradient id="badge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb34e"/>
+      <stop offset="1" stop-color="#f79425"/>
+    </linearGradient>
   </defs>
-  <rect x="170" y="92" width="684" height="840" rx="108" fill="url(#paper)" filter="url(#shadow)"/>
-  <path d="M646 92h100c60 0 108 48 108 108v106z" fill="#d5e6ff"/>
-  <path d="M646 92v142c0 40 32 72 72 72h136z" fill="url(#blue)"/>
-  <rect x="258" y="334" width="508" height="92" rx="38" fill="#dceaff"/>
-  <circle cx="310" cy="380" r="20" fill="#2f7ff0"/>
-  <rect x="354" y="360" width="324" height="24" rx="12" fill="#4a6f9f"/>
-  <rect x="354" y="396" width="218" height="14" rx="7" fill="#9bb5d5"/>
-  <rect x="258" y="474" width="508" height="92" rx="38" fill="#edf3fb"/>
-  <circle cx="310" cy="520" r="20" fill="#7ea9e6"/>
-  <rect x="354" y="500" width="276" height="24" rx="12" fill="#55769e"/>
-  <rect x="354" y="536" width="246" height="14" rx="7" fill="#adc0d7"/>
-  <rect x="258" y="614" width="508" height="92" rx="38" fill="#edf3fb"/>
-  <circle cx="310" cy="660" r="20" fill="#7ea9e6"/>
-  <rect x="354" y="640" width="342" height="24" rx="12" fill="#55769e"/>
-  <rect x="354" y="676" width="180" height="14" rx="7" fill="#adc0d7"/>
-  <rect x="258" y="760" width="304" height="24" rx="12" fill="#2f7ff0" opacity=".85"/>
+  <path d="M192 932V92h428l212 212v628z" fill="#fff" stroke="#d6d6d6" stroke-width="7" filter="url(#shadow)"/>
+  <path d="M620 92v212h212z" fill="#e9e9e9" stroke="#c7c7c7" stroke-width="6"/>
+  <path d="M304 782V224" stroke="#f2584f" stroke-width="8" opacity=".72"/>
+  <g stroke="#64adef" stroke-width="7" opacity=".66">
+    <path d="M242 276h510"/><path d="M242 358h510"/><path d="M242 440h510"/>
+    <path d="M242 522h510"/><path d="M242 604h510"/><path d="M242 686h510"/>
+    <path d="M242 768h510"/>
+  </g>
+  <rect x="566" y="40" width="358" height="358" rx="100" fill="#fff"/>
+  <rect x="580" y="54" width="330" height="330" rx="72" fill="url(#badge)"/>
+  <path d="M642 306c40 36 78 30 102-36 24 66 62 72 102 36V178c-40 36-78 30-102-36-24 66-62 72-102 36z" fill="#fff2d7" stroke="#fff" stroke-width="5"/>
 </svg>

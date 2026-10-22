@@ -29,6 +29,8 @@ xcodebuild \
   -destination "platform=macOS,arch=$host_architecture" \
   -configuration "$configuration" \
   -derivedDataPath "$derived_data" \
-  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGN_STYLE=Manual \
+  CODE_SIGN_IDENTITY=- \
+  DEVELOPMENT_TEAM= \
   clean \
   "$action"

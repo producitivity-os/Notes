@@ -12,6 +12,22 @@ struct ArrowAttachment: Codable, Equatable, Hashable, Sendable {
     var elementID: String
     var edge: ArrowAnchorEdge
     var position: Double
+    /// A point in the attached element's unrotated local coordinate space.
+    /// Values are normalized to `0...1`, so an attachment follows both moves
+    /// and resizes. `nil` preserves the original named-edge attachment format.
+    var normalizedPoint: CanvasPoint?
+
+    init(
+        elementID: String,
+        edge: ArrowAnchorEdge,
+        position: Double,
+        normalizedPoint: CanvasPoint? = nil
+    ) {
+        self.elementID = elementID
+        self.edge = edge
+        self.position = position
+        self.normalizedPoint = normalizedPoint
+    }
 }
 
 struct ArrowEndpoint: Codable, Equatable, Hashable, Sendable {

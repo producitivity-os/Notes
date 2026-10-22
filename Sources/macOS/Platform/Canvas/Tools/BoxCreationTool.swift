@@ -31,8 +31,9 @@ class BoxCreationTool: CanvasTool {
         if frame.width < 12 || frame.height < 12 {
             frame = CanvasRect(x: start.x, y: start.y, width: defaultSize.width, height: defaultSize.height)
         }
-        frame = frame.constrained(to: context.pageSize)
-        let element = makeElement(frame: frame)
+        var element = makeElement(frame: frame)
+        frame = context.controller.constrainedFrame(frame, for: element)
+        element.geometry.frame = frame
         context.controller.addElement(element, actionName: "Create \(context.controller.activeTool.label)")
         context.controller.activeTool = .select
         context.view.transientBox = nil

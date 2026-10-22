@@ -13,19 +13,47 @@ enum CanvasGeometry {
     }
 
     static func attachmentPoint(_ attachment: ArrowAttachment, in scene: CanvasSceneDocument) -> CanvasPoint? {
-        guard let target = scene.element(id: attachment.elementID) else { return nil }
-        let frame = target.geometry.frame.cgRect
-        let t = CGFloat(min(max(attachment.position, 0), 1))
-        let unrotated: CGPoint
-        switch attachment.edge {
-        case .center: unrotated = CGPoint(x: frame.midX, y: frame.midY)
-        case .top: unrotated = CGPoint(x: frame.minX + frame.width * t, y: frame.minY)
-        case .right: unrotated = CGPoint(x: frame.maxX, y: frame.minY + frame.height * t)
-        case .bottom: unrotated = CGPoint(x: frame.minX + frame.width * t, y: frame.maxY)
-        case .left: unrotated = CGPoint(x: frame.minX, y: frame.minY + frame.height * t)
+        scene.attachmentPoint(for: attachment)
+    }
+
+    /// Resolves a drop to a visible named anchor first, then to the precise
+    /// point inside the frontmost element under the pointer.
+    static func attachment(
+        to point: CanvasPoint,
+        in scene: CanvasSceneDocument,
+        excluding excludedID: String? = nil,
+        maximumDistance: Double = 18
+    ) -> ArrowAttachment? {
+        if let named = nearestAttachment(
+            to: point,
+            in: scene,
+            excluding: excludedID,
+            maximumDistance: maximumDistance
+        ) {
+            return named
         }
-        let value = rotated(unrotated, around: CGPoint(x: frame.midX, y: frame.midY), degrees: target.geometry.rotation)
-        return CanvasPoint(x: value.x, y: value.y)
+
+        for element in scene.elements.reversed()
+        where element.acceptsArrowAttachment && element.id != excludedID {
+            let frame = element.geometry.frame.cgRect
+            guard frame.width > 0, frame.height > 0 else { continue }
+            let local = rotated(
+                point.cgPoint,
+                around: CGPoint(x: frame.midX, y: frame.midY),
+                degrees: -element.geometry.rotation
+            )
+            guard frame.contains(local) else { continue }
+            return ArrowAttachment(
+                elementID: element.id,
+                edge: .center,
+                position: 0.5,
+                normalizedPoint: CanvasPoint(
+                    x: (local.x - frame.minX) / frame.width,
+                    y: (local.y - frame.minY) / frame.height
+                )
+            )
+        }
+        return nil
     }
 
     static func nearestAttachment(

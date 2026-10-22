@@ -6,7 +6,8 @@ extension UTType {
 }
 
 enum NotebookFormat {
-    static let currentVersion = 2
+    static let currentVersion = 3
+    static let minimumReadableVersion = 2
     static let manifestName = "manifest.json"
     static let pagesDirectory = "pages"
     static let assetsDirectory = "assets"
@@ -88,12 +89,40 @@ enum NotebookPageOrientation: String, Codable, CaseIterable, Sendable {
     case landscape
 }
 
+enum NotebookGridPattern: String, Codable, CaseIterable, Identifiable, Sendable {
+    case grid
+    case dots
+    case isometric
+    case blank
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .grid: "Grid"
+        case .dots: "Dots"
+        case .isometric: "Isometric Dots"
+        case .blank: "Blank"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .grid: "grid"
+        case .dots: "circle.grid.3x3.fill"
+        case .isometric: "circle.hexagongrid.fill"
+        case .blank: "rectangle"
+        }
+    }
+}
+
 struct NotebookPageMetadata: Codable, Identifiable, Equatable, Sendable {
     var id: String
     var title: String
     var orientation: NotebookPageOrientation
     var width: Double
     var height: Double
+    var gridPattern: NotebookGridPattern?
     var revision: Int
     var createdAt: Date
     var updatedAt: Date
@@ -106,11 +135,14 @@ struct NotebookPageMetadata: Codable, Identifiable, Equatable, Sendable {
             orientation: orientation,
             width: orientation == .portrait ? NotebookFormat.defaultWidth : NotebookFormat.defaultHeight,
             height: orientation == .portrait ? NotebookFormat.defaultHeight : NotebookFormat.defaultWidth,
+            gridPattern: .dots,
             revision: 0,
             createdAt: now,
             updatedAt: now
         )
     }
+
+    var resolvedGridPattern: NotebookGridPattern { gridPattern ?? .dots }
 }
 
 struct NotebookPluginRequirement: Codable, Equatable, Sendable {
@@ -188,7 +220,7 @@ struct NotebookPackage: Equatable, Sendable {
     }
 
     mutating func normalize() throws {
-        guard manifest.formatVersion == NotebookFormat.currentVersion else {
+        guard (NotebookFormat.minimumReadableVersion...NotebookFormat.currentVersion).contains(manifest.formatVersion) else {
             throw NotebookPackageError.unsupportedVersion(manifest.formatVersion)
         }
         guard !manifest.pages.isEmpty else { throw NotebookPackageError.missingPages }
@@ -203,19 +235,22 @@ struct NotebookPackage: Equatable, Sendable {
             }
             if let payload = pagePayloads[page.id] {
                 guard payload.pageID == page.id else { throw NotebookPackageError.invalidPackage }
-                guard payload.formatVersion == NotebookFormat.currentVersion else {
+                guard (NotebookFormat.minimumReadableVersion...NotebookFormat.currentVersion).contains(payload.formatVersion) else {
                     throw NotebookPackageError.unsupportedVersion(payload.formatVersion)
                 }
                 guard payload.scene.schemaVersion == CanvasSceneDocument.currentVersion else {
                     throw NotebookPackageError.unsupportedSceneVersion(payload.scene.schemaVersion)
                 }
-                pagePayloads[page.id] = payload
+                var upgraded = payload
+                upgraded.formatVersion = NotebookFormat.currentVersion
+                pagePayloads[page.id] = upgraded
             }
         }
         pagePayloads = pagePayloads.filter { seen.contains($0.key) }
         if !seen.contains(manifest.coverPageID) {
             manifest.coverPageID = manifest.pages[0].id
         }
+        manifest.formatVersion = NotebookFormat.currentVersion
     }
 }
 

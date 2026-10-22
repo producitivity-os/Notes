@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 import ImageIO
-import AppKit
 
 enum NotebookPackageIO {
     static func read(fileWrapper: FileWrapper) throws -> NotebookPackage {
@@ -17,7 +16,7 @@ enum NotebookPackageIO {
         }
 
         let manifest = try NotebookCoding.decoder.decode(NotebookManifest.self, from: manifestData)
-        guard manifest.formatVersion == NotebookFormat.currentVersion else {
+        guard (NotebookFormat.minimumReadableVersion...NotebookFormat.currentVersion).contains(manifest.formatVersion) else {
             throw NotebookPackageError.unsupportedVersion(manifest.formatVersion)
         }
         guard let pageFiles = root[NotebookFormat.pagesDirectory]?.fileWrappers else {
@@ -108,7 +107,13 @@ enum NotebookPackageIO {
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
               ] as CFDictionary) else { return nil }
-        return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+        let encoded = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(encoded, "public.png" as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return encoded as Data
     }
 
     private static func directory(named name: String, files: [String: Data]) -> FileWrapper {

@@ -116,6 +116,7 @@ final class SelectTool: CanvasTool {
         for index in updated.elements.indices where context.controller.selection.ids.contains(updated.elements[index].id) {
             var element = updated.elements[index]
             if case var .arrow(arrow) = element {
+                arrow = original.resolvedArrow(arrow)
                 arrow.start.point.x += dx
                 arrow.start.point.y += dy
                 arrow.end.point.x += dx
@@ -133,7 +134,7 @@ final class SelectTool: CanvasTool {
                 var geometry = element.geometry
                 geometry.frame.x += dx
                 geometry.frame.y += dy
-                geometry.frame = geometry.frame.constrained(to: context.pageSize)
+                geometry.frame = context.controller.constrainedFrame(geometry.frame, for: element)
                 element.geometry = geometry
             }
             updated.elements[index] = element
@@ -167,7 +168,7 @@ final class SelectTool: CanvasTool {
             geometry.frame.width = proposedWidth
             geometry.frame.height = proposedHeight
         }
-        geometry.frame = geometry.frame.constrained(to: context.pageSize)
+        geometry.frame = context.controller.constrainedFrame(geometry.frame, for: element)
         element.geometry = geometry
         var updated = original
         updated.replace(element)
@@ -207,11 +208,9 @@ final class SelectTool: CanvasTool {
 
     private func bindEndpoint(id: String, isStart: Bool, at point: CanvasPoint, context: CanvasInteractionContext) {
         guard case var .arrow(arrow)? = context.scene.element(id: id) else { return }
-        let otherTarget = isStart ? arrow.end.attachment?.elementID : arrow.start.attachment?.elementID
-        let attachment = CanvasGeometry.nearestAttachment(
+        let attachment = CanvasGeometry.attachment(
             to: point,
             in: context.scene,
-            excluding: otherTarget,
             maximumDistance: 18 / Double(context.view.viewport.scale)
         )
         let resolved = attachment.flatMap { CanvasGeometry.attachmentPoint($0, in: context.scene) } ?? point

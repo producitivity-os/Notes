@@ -7,7 +7,9 @@ struct NativeCanvasHost: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NativeCanvasView {
         context.coordinator.loadGeneration = controller.loadGeneration
-        return NativeCanvasView(controller: controller)
+        let view = NativeCanvasView(controller: controller)
+        controller.attachCanvasView(view)
+        return view
     }
 
     func updateNSView(_ view: NativeCanvasView, context: Context) {
@@ -16,6 +18,10 @@ struct NativeCanvasHost: NSViewRepresentable {
             view.resetForPage()
         }
         view.needsDisplay = true
+    }
+
+    static func dismantleNSView(_ view: NativeCanvasView, coordinator: Coordinator) {
+        view.controller.detachCanvasView(view)
     }
 
     final class Coordinator {

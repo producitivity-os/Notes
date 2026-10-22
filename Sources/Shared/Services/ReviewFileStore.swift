@@ -1,4 +1,7 @@
 import Foundation
+#if os(macOS)
+import Security
+#endif
 
 struct RegisteredNotebook: Codable, Identifiable, Equatable, Sendable {
     var id: String { notebookID }
@@ -7,6 +10,11 @@ struct RegisteredNotebook: Codable, Identifiable, Equatable, Sendable {
     var bookmark: Data
     var lastKnownPath: String
     var updatedAt: Date
+}
+
+private struct RegisteredNotebookFile: Codable, Sendable {
+    var formatVersion: Int
+    var notebooks: [RegisteredNotebook]
 }
 
 struct NotebookLaunchRequest: Codable, Identifiable, Equatable, Sendable {
@@ -30,6 +38,73 @@ struct CardScheduleFile: Codable, Equatable, Sendable {
     var cards: [String: JSONValue]
 }
 
+enum ReviewRating: String, Codable, CaseIterable, Sendable {
+    case again
+    case good
+    case easy
+}
+
+struct ReviewCardSchedule: Codable, Equatable, Sendable {
+    var cardID: String
+    var dueAt: Date
+    var lastReviewedAt: Date?
+    var reviewCount: Int
+    var lapses: Int
+    var algorithmID: String
+    var algorithmVersion: Int
+    var algorithmState: JSONValue
+    var contentRevision: Int
+}
+
+struct ReviewScheduleFile: Codable, Equatable, Sendable {
+    var formatVersion: Int = 2
+    var notebookID: String
+    var updatedAt: Date
+    var cards: [String: ReviewCardSchedule]
+    var ignoredCardIDs: Set<String>
+
+    init(
+        formatVersion: Int = 2,
+        notebookID: String,
+        updatedAt: Date,
+        cards: [String: ReviewCardSchedule],
+        ignoredCardIDs: Set<String> = []
+    ) {
+        self.formatVersion = formatVersion
+        self.notebookID = notebookID
+        self.updatedAt = updatedAt
+        self.cards = cards
+        self.ignoredCardIDs = ignoredCardIDs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case formatVersion, notebookID, updatedAt, cards, ignoredCardIDs
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        formatVersion = try values.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 2
+        notebookID = try values.decode(String.self, forKey: .notebookID)
+        updatedAt = try values.decode(Date.self, forKey: .updatedAt)
+        cards = try values.decodeIfPresent([String: ReviewCardSchedule].self, forKey: .cards) ?? [:]
+        ignoredCardIDs = try values.decodeIfPresent(Set<String>.self, forKey: .ignoredCardIDs) ?? []
+    }
+}
+
+struct ReviewEvent: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var notebookID: String
+    var cardID: String
+    var rating: ReviewRating
+    var reviewedAt: Date
+    var previousDueAt: Date
+    var nextDueAt: Date
+    var intervalSeconds: Double
+    var correct: Bool
+    var algorithmID: String
+    var algorithmVersion: Int
+}
+
 struct PluginPersonRecord: Codable, Equatable, Sendable {
     var id: String
     var name: String
@@ -41,23 +116,35 @@ struct PluginPersonRecord: Codable, Equatable, Sendable {
 }
 
 struct ReviewFileStore: Sendable {
-    static let appGroupIdentifier = "group.com.productivity-os.study"
+    static let appGroupIdentifier = "A44TG8C84Y.com.productivitysuite.shared"
     let rootURL: URL
 
     init(fileManager: FileManager = .default) throws {
-        let rootURL: URL
-        if let group = fileManager.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier) {
-            rootURL = group.appendingPathComponent("ReviewStore", isDirectory: true)
-        } else {
-            let support = try fileManager.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            )
-            rootURL = support.appendingPathComponent("Productivity OS/ReviewStore", isDirectory: true)
+        guard Self.canUseAppGroup,
+              let group = fileManager.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier) else {
+            throw CocoaError(.fileNoSuchFile, userInfo: [
+                NSLocalizedDescriptionKey: "The Productivity Suite App Group is unavailable. Check the app signing configuration."
+            ])
         }
+        let rootURL = group.appendingPathComponent("ReviewStore", isDirectory: true)
+        try NotebookReviewLegacyMigrator.migrateIfNeeded(to: rootURL, fileManager: fileManager)
         try self.init(rootURL: rootURL, fileManager: fileManager)
+    }
+
+    private static var canUseAppGroup: Bool {
+        #if os(macOS)
+        guard let task = SecTaskCreateFromSelf(nil),
+              let groups = SecTaskCopyValueForEntitlement(
+                  task,
+                  "com.apple.security.application-groups" as CFString,
+                  nil
+              ) as? [String] else {
+            return false
+        }
+        return groups.contains(appGroupIdentifier)
+        #else
+        return true
+        #endif
     }
 
     init(rootURL: URL, fileManager: FileManager = .default) throws {
@@ -95,12 +182,17 @@ struct ReviewFileStore: Sendable {
         )
         registry.removeAll { $0.notebookID == value.notebookID }
         registry.append(value)
-        try writeJSON(registry.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }, to: registryURL)
+        let sorted = registry.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+        try writeJSON(RegisteredNotebookFile(formatVersion: 2, notebooks: sorted), to: registryURL)
     }
 
     func registeredNotebooks() throws -> [RegisteredNotebook] {
         guard FileManager.default.fileExists(atPath: registryURL.path) else { return [] }
-        return try NotebookCoding.decoder.decode([RegisteredNotebook].self, from: Data(contentsOf: registryURL))
+        let data = try Data(contentsOf: registryURL)
+        if let file = try? NotebookCoding.decoder.decode(RegisteredNotebookFile.self, from: data) {
+            return file.notebooks
+        }
+        return try NotebookCoding.decoder.decode([RegisteredNotebook].self, from: data)
     }
 
     func resolve(_ notebook: RegisteredNotebook) -> URL? {
@@ -119,6 +211,28 @@ struct ReviewFileStore: Sendable {
 
     func writeSchedule(_ schedule: CardScheduleFile) throws {
         try writeJSON(schedule, to: schedulesURL.appendingPathComponent("\(schedule.notebookID).json"))
+    }
+
+    func writeReviewSchedule(_ schedule: ReviewScheduleFile) throws {
+        try writeJSON(schedule, to: schedulesURL.appendingPathComponent("\(schedule.notebookID).json"))
+    }
+
+    func reviewSchedule(notebookID: String) throws -> ReviewScheduleFile? {
+        let url = schedulesURL.appendingPathComponent("\(notebookID).json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try NotebookCoding.decoder.decode(ReviewScheduleFile.self, from: Data(contentsOf: url))
+    }
+
+    func setCard(_ cardID: String, in notebookID: String, ignoredInReview: Bool, now: Date = Date()) throws {
+        var file = try reviewSchedule(notebookID: notebookID)
+            ?? ReviewScheduleFile(notebookID: notebookID, updatedAt: now, cards: [:])
+        if ignoredInReview {
+            file.ignoredCardIDs.insert(cardID)
+        } else {
+            file.ignoredCardIDs.remove(cardID)
+        }
+        file.updatedAt = now
+        try writeReviewSchedule(file)
     }
 
     func schedule(notebookID: String) throws -> CardScheduleFile? {
@@ -177,6 +291,28 @@ struct ReviewFileStore: Sendable {
         }
     }
 
+    func appendReviewEvent(_ event: ReviewEvent) throws {
+        let url = historyURL.appendingPathComponent("\(event.notebookID).ndjson")
+        var data = try NotebookCoding.encoder.encode(event)
+        data.append(0x0A)
+        if FileManager.default.fileExists(atPath: url.path) {
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            try handle.close()
+        } else {
+            try data.write(to: url, options: .atomic)
+        }
+    }
+
+    func reviewEvents(notebookID: String) throws -> [ReviewEvent] {
+        let url = historyURL.appendingPathComponent("\(notebookID).ndjson")
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return try Data(contentsOf: url)
+            .split(separator: 0x0A)
+            .map { try NotebookCoding.decoder.decode(ReviewEvent.self, from: Data($0)) }
+    }
+
     func replaceHistory(notebookID: String, events: [JSONValue]) throws {
         let url = historyURL.appendingPathComponent("\(notebookID).ndjson")
         var data = Data()
@@ -203,6 +339,25 @@ struct ReviewFileStore: Sendable {
     func takeNavigationRequest(id: String) throws -> NotebookNavigationRequest {
         let url = navigationRequestsURL.appendingPathComponent("\(id).json")
         let request = try NotebookCoding.decoder.decode(NotebookNavigationRequest.self, from: Data(contentsOf: url))
+        try FileManager.default.removeItem(at: url)
+        return request
+    }
+
+    @discardableResult
+    func createNavigationRequest(notebookID: String, pageID: String?, objectID: String) throws -> NotebookNavigationRequest {
+        let request = NotebookNavigationRequest(
+            id: UUID().uuidString.lowercased(),
+            notebookID: notebookID,
+            pageID: pageID,
+            objectID: objectID
+        )
+        try writeJSON(request, to: navigationRequestsURL.appendingPathComponent("\(request.id).json"))
+        return request
+    }
+
+    func takeLaunchRequest(id: String) throws -> NotebookLaunchRequest {
+        let url = launchRequestsURL.appendingPathComponent("\(id).json")
+        let request = try NotebookCoding.decoder.decode(NotebookLaunchRequest.self, from: Data(contentsOf: url))
         try FileManager.default.removeItem(at: url)
         return request
     }
@@ -247,5 +402,46 @@ struct ReviewFileStore: Sendable {
             return date.timeIntervalSince1970 * 1_000
         }
         return 0
+    }
+}
+
+private enum NotebookReviewLegacyMigrator {
+    static func migrateIfNeeded(to destination: URL, fileManager: FileManager) throws {
+        let marker = destination.appendingPathComponent(".legacy-migration-v1")
+        guard !fileManager.fileExists(atPath: marker.path) else { return }
+
+        let support = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let legacy = support.appendingPathComponent("Productivity OS/ReviewStore", isDirectory: true)
+        try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        if fileManager.fileExists(atPath: legacy.path) {
+            let backup = destination.appendingPathComponent("LegacyBackup", isDirectory: true)
+            if !fileManager.fileExists(atPath: backup.path) {
+                try fileManager.copyItem(at: legacy, to: backup)
+            }
+            try mergeDirectory(from: legacy, to: destination, fileManager: fileManager)
+        }
+        try Data("completed".utf8).write(to: marker, options: .atomic)
+    }
+
+    private static func mergeDirectory(from source: URL, to destination: URL, fileManager: FileManager) throws {
+        for item in try fileManager.contentsOfDirectory(
+            at: source,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) {
+            let target = destination.appendingPathComponent(item.lastPathComponent)
+            let isDirectory = try item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+            if isDirectory {
+                try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
+                try mergeDirectory(from: item, to: target, fileManager: fileManager)
+            } else if !fileManager.fileExists(atPath: target.path) {
+                try fileManager.copyItem(at: item, to: target)
+            }
+        }
     }
 }

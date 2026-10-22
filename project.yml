@@ -4,6 +4,7 @@ options:
   bundleIdPrefix: com.productivity-os
   deploymentTarget:
     macOS: "14.0"
+    iOS: "17.0"
   createIntermediateGroups: true
 
 settings:
@@ -11,8 +12,11 @@ settings:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     GENERATE_INFOPLIST_FILE: NO
+    DEVELOPMENT_TEAM: A44TG8C84Y
 
 packages:
+  ProductivityRoutineKit:
+    path: ../../packages/ProductivityRoutineKit
   SwiftMath:
     url: https://github.com/mgriebling/SwiftMath.git
     exactVersion: 1.7.3
@@ -43,7 +47,7 @@ targets:
     info:
       path: Sources/macOS/Platform/Config/Notes-Info.plist
       properties:
-        CFBundleDisplayName: Notes
+        CFBundleDisplayName: Notebook
         CFBundleShortVersionString: "1.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.productivity
@@ -73,21 +77,28 @@ targets:
               public.mime-type: application/vnd.productivity-os.notebook
     entitlements:
       path: Sources/macOS/Platform/Config/Notes.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.application-groups:
+          - A44TG8C84Y.com.productivitysuite.shared
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes
-        PRODUCT_NAME: Notes
+        PRODUCT_NAME: Notebook
+        PRODUCT_MODULE_NAME: Notes
         CODE_SIGN_STYLE: Automatic
         ENABLE_APP_SANDBOX: YES
         ENABLE_HARDENED_RUNTIME: YES
     dependencies:
       - package: SwiftMath
+      - package: ProductivityRoutineKit
       - target: NotebookThumbnail
         embed: true
       - target: NotebookPreview
         embed: true
-      - target: ReviseNotebookAction
+      - target: ReviewNotebookAction
         embed: true
 
   NotebookThumbnail:
@@ -112,12 +123,18 @@ targets:
             QLThumbnailMinimumDimension: 32
     entitlements:
       path: Sources/macOS/Platform/Config/NotesExtension.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - A44TG8C84Y.com.productivitysuite.shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.thumbnail
         PRODUCT_NAME: NotebookThumbnail
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: YES
+    dependencies:
+      - package: ProductivityRoutineKit
 
   NotebookPreview:
     type: app-extension
@@ -141,14 +158,21 @@ targets:
               - com.productivity-os.notebook
     entitlements:
       path: Sources/macOS/Platform/Config/NotesExtension.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - A44TG8C84Y.com.productivitysuite.shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.preview
         PRODUCT_NAME: NotebookPreview
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: YES
+    dependencies:
+      - package: ProductivityRoutineKit
+      - sdk: PDFKit.framework
 
-  ReviseNotebookAction:
+  ReviewNotebookAction:
     type: app-extension
     platform: macOS
     deploymentTarget: "14.0"
@@ -158,7 +182,7 @@ targets:
     info:
       path: Sources/macOS/Platform/Config/ReviseNotebookAction-Info.plist
       properties:
-        CFBundleDisplayName: Revise Notebook
+        CFBundleDisplayName: Review Notebook
         CFBundleShortVersionString: "1.0"
         CFBundleVersion: "1"
         NSExtension:
@@ -169,15 +193,21 @@ targets:
               NSExtensionActivationSupportsFileWithMaxCount: 1
             NSExtensionServiceRoleType: NSExtensionServiceRoleTypeViewer
             NSExtensionServiceAllowsFinderPreviewItem: true
-            NSExtensionServiceFinderPreviewLabel: Revise Notebook
+            NSExtensionServiceFinderPreviewLabel: Review Notebook
     entitlements:
       path: Sources/macOS/Platform/Config/NotesExtension.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - A44TG8C84Y.com.productivitysuite.shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.revise-action
-        PRODUCT_NAME: ReviseNotebookAction
+        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.review-action
+        PRODUCT_NAME: ReviewNotebookAction
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: YES
+    dependencies:
+      - package: ProductivityRoutineKit
 
   NotesTests:
     type: bundle.unit-test
@@ -190,7 +220,91 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.tests
+        GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Notebook.app/Contents/MacOS/Notebook"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+  NotebookIOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/Shared
+        excludes:
+          - Services/ReviewFileStore.swift
+      - path: Sources/iOS
+        excludes:
+          - Platform/Config
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
+    info:
+      path: Sources/iOS/Platform/Config/NotebookIOS-Info.plist
+      properties:
+        CFBundleDisplayName: Notebook
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.productivity-os.notes.actions
+            CFBundleURLSchemes: [productivity-notes]
+        LSApplicationCategoryType: public.app-category.productivity
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportsDocumentBrowser: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Productivity Notebook
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.productivity-os.notebook
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.productivity-os.notebook
+            UTTypeDescription: Productivity Notebook
+            UTTypeConformsTo:
+              - com.apple.package
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - notebook
+                - ntbk
+              public.mime-type: application/vnd.productivity-os.notebook
+    entitlements:
+      path: Sources/iOS/Platform/Config/NotebookIOS.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - A44TG8C84Y.com.productivitysuite.shared
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.ios
+        PRODUCT_NAME: Notebook
+        PRODUCT_MODULE_NAME: NotebookIOS
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - package: ProductivityRoutineKit
+      - package: SwiftMath
+
+  NotebookIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Tests/iOSTests
+    dependencies:
+      - target: NotebookIOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.productivity-os.notes.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Notebook.app/Notebook"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 
 schemes:
   Notes:
@@ -205,5 +319,20 @@ schemes:
       config: Debug
       targets:
         - NotesTests
+    archive:
+      config: Release
+
+  NotebookIOS:
+    shared: true
+    build:
+      targets:
+        NotebookIOS: all
+        NotebookIOSTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - NotebookIOSTests
     archive:
       config: Release

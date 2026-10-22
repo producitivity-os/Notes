@@ -13,15 +13,28 @@ final class CardElementRenderer: CanvasElementRenderer {
         NSColor.white.setFill()
         let shape = NSBezierPath(roundedRect: frame, xRadius: 14, yRadius: 14)
         shape.fill()
-        NSColor.separatorColor.setStroke()
-        shape.lineWidth = 1
+        NSColor(calibratedWhite: 0.46, alpha: 1).setStroke()
+        shape.lineWidth = 1.5
         shape.stroke()
         guard context.depth < 2 else { return }
+        let face = card.displayFace
+        guard let contentBounds = face.scene.contentBounds else {
+            drawTitle(card, in: frame)
+            return
+        }
         context.graphics.saveGState()
         shape.addClip()
-        context.drawScene(card.front, card.sideSize, frame.insetBy(dx: 2, dy: 2), context.depth + 1)
+        let translated = face.scene.translatedBy(
+            x: -contentBounds.x + CardElement.contentPadding,
+            y: -contentBounds.y + CardElement.contentPadding
+        )
+        let sourceSize = card.contentSize(for: face)
+        context.drawScene(translated, sourceSize, frame, context.depth + 1)
         context.graphics.restoreGState()
-        guard !card.title.isEmpty else { return }
+    }
+
+    private func drawTitle(_ card: CardElement, in frame: CGRect) {
+        guard !card.title.isEmpty, card.title != "Card" else { return }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .left
         paragraph.lineBreakMode = .byTruncatingTail

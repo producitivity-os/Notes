@@ -3,6 +3,9 @@ import SwiftMath
 
 @MainActor
 final class MathRenderer {
+    /// Canvas content is routinely magnified while editing. Keep substantially
+    /// more backing pixels than logical points so formulas remain crisp.
+    static let backingScale: CGFloat = 4
     private var cache: [String: NSImage] = [:]
 
     func image(latex: String, fontSize: CGFloat, color: NSColor, display: Bool, maximumWidth: CGFloat) -> NSImage? {
@@ -19,21 +22,29 @@ final class MathRenderer {
         guard measured.width.isFinite, measured.height.isFinite, measured.width > 0, measured.height > 0 else { return nil }
         label.frame = CGRect(origin: .zero, size: measured)
         label.layoutSubtreeIfNeeded()
-        guard let bitmap = label.bitmapImageRepForCachingDisplay(in: label.bounds) else { return nil }
+        let pixelsWide = max(1, Int(ceil(measured.width * Self.backingScale)))
+        let pixelsHigh = max(1, Int(ceil(measured.height * Self.backingScale)))
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelsWide,
+            pixelsHigh: pixelsHigh,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+        bitmap.size = measured
         label.cacheDisplay(in: label.bounds, to: bitmap)
-        let naturalImage = NSImage(size: measured)
-        naturalImage.addRepresentation(bitmap)
         let maximumWidth = max(40, maximumWidth)
-        let result: NSImage
-        if measured.width > maximumWidth {
-            let target = CGSize(width: maximumWidth, height: measured.height * maximumWidth / measured.width)
-            result = NSImage(size: target, flipped: false) { rect in
-                naturalImage.draw(in: rect)
-                return true
-            }
-        } else {
-            result = naturalImage
-        }
+        let resultSize = measured.width > maximumWidth
+            ? CGSize(width: maximumWidth, height: measured.height * maximumWidth / measured.width)
+            : measured
+        bitmap.size = resultSize
+        let result = NSImage(size: resultSize)
+        result.addRepresentation(bitmap)
         cache[key] = result
         return result
     }

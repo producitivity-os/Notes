@@ -5,7 +5,7 @@ final class ArrowTool: CanvasTool {
     private var start: ArrowEndpoint?
 
     func mouseDown(at point: CanvasPoint, event: NSEvent, context: CanvasInteractionContext) {
-        let attachment = CanvasGeometry.nearestAttachment(
+        let attachment = CanvasGeometry.attachment(
             to: point,
             in: context.scene,
             maximumDistance: 18 / Double(context.view.viewport.scale)
@@ -19,10 +19,9 @@ final class ArrowTool: CanvasTool {
     func mouseDragged(to point: CanvasPoint, event: NSEvent, context: CanvasInteractionContext) {
         guard let start else { return }
         context.view.updateHover(at: point)
-        let attachment = CanvasGeometry.nearestAttachment(
+        let attachment = CanvasGeometry.attachment(
             to: point,
             in: context.scene,
-            excluding: start.attachment?.elementID,
             maximumDistance: 18 / Double(context.view.viewport.scale)
         )
         let resolved = attachment.flatMap { CanvasGeometry.attachmentPoint($0, in: context.scene) } ?? point
@@ -32,10 +31,9 @@ final class ArrowTool: CanvasTool {
 
     func mouseUp(at point: CanvasPoint, event: NSEvent, context: CanvasInteractionContext) {
         guard let start else { return }
-        let attachment = CanvasGeometry.nearestAttachment(
+        let attachment = CanvasGeometry.attachment(
             to: point,
             in: context.scene,
-            excluding: start.attachment?.elementID,
             maximumDistance: 18 / Double(context.view.viewport.scale)
         )
         let resolved = attachment.flatMap { CanvasGeometry.attachmentPoint($0, in: context.scene) } ?? point
